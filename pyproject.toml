@@ -8,7 +8,7 @@ license = "MIT"
 version = "0.1.0"
 description = "UnMeta: see and remove hidden details (location, device, names, AI labels) from photos, videos and audio, losslessly."
 requires-python = ">=3.10"
-dependencies = ["pillow>=11.3", "pillow-heif>=0.18", "flask>=3.0", "reportlab>=4.0"]
+dependencies = ["pillow>=11.3", "pillow-heif>=0.18", "flask>=3.0", "reportlab>=5.1.0"]
 
 [project.optional-dependencies]
 raw = ["rawpy>=0.21"]
