@@ -620,9 +620,9 @@ function landing() {
     new IntersectionObserver(([e]) => quick.classList.toggle("show", !e.isIntersecting && e.boundingClientRect.top < 0)).observe(tray);
   }
   // the menu closes when you pick a link, press Escape or tap elsewhere
-  const menu = $("#menu");
-  if (menu) {
+  for (const menu of $$("details.menu")) {   // the site menu and the language picker
     menu.addEventListener("click", e => { if (e.target.closest("a")) menu.open = false; });
+    menu.addEventListener("toggle", () => { if (menu.open) for (const m of $$("details.menu")) if (m !== menu) m.open = false; });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); } });
     document.addEventListener("click", e => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
   }

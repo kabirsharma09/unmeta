@@ -683,7 +683,7 @@ def test_landing_pages_are_complete_unique_and_linked(monkeypatch):
         assert "Clean your photos" not in _re.search(r'<h1 id="homeTitle".*?</h1>', html, _re.S).group(0)
     sm = c.get("/sitemap.xml", headers=h).get_data(as_text=True)
     assert all(f"https://unmeta.example/{p['slug']}/" in sm for p in PAGES)
-    assert "## Pages" in c.get("/llms.txt", headers=h).get_data(as_text=True)
+    assert "## Tools" in c.get("/llms.txt", headers=h).get_data(as_text=True)
     assert c.get("/remove-ai-info-instagram", headers=h).status_code == 301
     assert c.get("/not-a-page/", headers=h).status_code == 404
 
@@ -758,10 +758,14 @@ def test_guides_are_articles_and_llms_full_has_every_page(monkeypatch):
         html = c.get(f"/{p['slug']}/", headers=h).get_data(as_text=True)
         types = {n["@type"] for n in _json.loads(_re.search(r'<script type="application/ld\+json">(.*?)</script>', html, _re.S).group(1))["@graph"]}
         assert ("Article" in types) == (p.get("kind") == "guide"), p["slug"]
+        for n in _json.loads(_re.search(r'<script type="application/ld\+json">(.*?)</script>', html, _re.S).group(1))["@graph"]:
+            if n["@type"] == "Article":
+                assert {"headline", "datePublished", "dateModified", "author", "image"} <= set(n), p["slug"]
     full = c.get("/llms-full.txt", headers=h).get_data(as_text=True)
     assert all(f"https://unmeta.example/{p['slug']}/" in full for p in PAGES)
     assert "<" not in full.replace("<<", "")  # plain text, no markup
-    assert "llms-full.txt" in c.get("/sitemap.xml", headers=h).get_data(as_text=True)
+    assert "llms" not in c.get("/sitemap.xml", headers=h).get_data(as_text=True)   # sitemap lists HTML pages only
+    assert 'rel="alternate" type="text/markdown" href="/llms.txt"' in c.get("/", headers=h).get_data(as_text=True)
     assert "install" not in c.get("/llms.txt", headers=h).get_data(as_text=True).lower()
 
 
@@ -832,3 +836,51 @@ def test_translated_pages_are_linked_both_ways_and_complete(monkeypatch):
         assert "<!--PAGE-LINKS-->" not in foot and f'href="/{slug}/"' in foot, slug   # its own language's pages
         assert ">Remove<" not in foot and ">Guides<" not in foot, slug                 # no English column labels
         assert foot.index('class="foot-langs"') > foot.index('class="foot-brand"'), slug
+
+
+def test_root_vercel_json_matches_the_server_config():
+    import json as _json
+    from pathlib import Path
+    from metaclean.server import VERCEL_URL, vercel_config
+    root = _json.loads((Path(__file__).resolve().parent.parent / "vercel.json").read_text())
+    assert root == _json.loads(_json.dumps(vercel_config(VERCEL_URL, build=True))), \
+        "vercel.json is stale: run scripts/write_vercel_json.py"
+    assert root["outputDirectory"] == "build/unmeta" and "export build/unmeta" in root["buildCommand"]
+
+
+
+def test_llms_txt_follows_the_llmstxt_org_format(monkeypatch):
+    """H1, a blockquote summary, prose and lists with no headings, then H2 sections that are only link lists."""
+    import re as _re
+    from metaclean import server
+    monkeypatch.setattr(server, "PUBLIC_URL", "https://unmeta.example")
+    c = server.create_app().test_client()
+    t = c.get("/llms.txt", headers={"Host": "unmeta.example"}).get_data(as_text=True)
+    lines = t.splitlines()
+    assert lines[0] == "# UnMeta" and lines[2].startswith("> ")
+    assert not any(l.startswith("### ") for l in lines) and sum(l.startswith("# ") for l in lines) == 1
+    first_h2 = next(i for i, l in enumerate(lines) if l.startswith("## "))
+    for l in lines[first_h2:]:
+        assert not l or l.startswith("## ") or _re.fullmatch(r"- \[[^\]]+\]\(https://[^)\s]+\)(: .+)?", l), l
+    assert "## Optional" in lines
+
+
+def test_security_txt_and_sitemap_alternates(monkeypatch):
+    import re as _re
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timezone
+    from metaclean import server
+    monkeypatch.setattr(server, "PUBLIC_URL", "https://unmeta.example")
+    c = server.create_app().test_client()
+    h = {"Host": "unmeta.example"}
+    sec = c.get("/.well-known/security.txt", headers=h).get_data(as_text=True)
+    fields = dict(l.split(": ", 1) for l in sec.strip().splitlines())
+    assert fields["Contact"].startswith("https://") and fields["Canonical"] == "https://unmeta.example/.well-known/security.txt"
+    expires = datetime.fromisoformat(fields["Expires"].replace("Z", "+00:00"))
+    assert 0 < (expires - datetime.now(timezone.utc)).days < 366   # RFC 9116: under a year
+    root = ET.fromstring(c.get("/sitemap.xml", headers=h).data)
+    ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9", "x": "http://www.w3.org/1999/xhtml"}
+    urls = root.findall("s:url", ns)
+    photos = next(u for u in urls if u.find("s:loc", ns).text == "https://unmeta.example/remove-metadata-from-photos/")
+    langs = {l.get("hreflang") for l in photos.findall("x:link", ns)}
+    assert {"en", "es", "pt-BR", "de", "fr", "hi", "x-default"} <= langs

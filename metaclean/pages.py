@@ -7,6 +7,7 @@ the FAQ and the structured data all come from here, so the visible FAQ and the F
 from __future__ import annotations
 
 UPDATED = "2026-11-17"
+PUBLISHED = "2026-11-17"   # when the site launched; guides carry it as datePublished
 
 # The short promise repeated on every page, so each one can be read on its own.
 PROMISE = ("UnMeta works inside your browser: the file is never uploaded, the page is blocked from sending anything, "

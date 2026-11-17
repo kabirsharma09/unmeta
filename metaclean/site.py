@@ -9,7 +9,7 @@ import html as _html
 import json
 import re
 
-from .pages import BY_SLUG, PAGES, UPDATED
+from .pages import BY_SLUG, PAGES, PUBLISHED, UPDATED
 
 SITE_NAME = "UnMeta"
 REPO = "https://github.com/kabirsharma09/unmeta"
@@ -133,12 +133,12 @@ def jsonld(page, base: str, app_node: dict) -> dict:
             {"@type": "ListItem", "position": 2, "name": page["nav"], "item": url}]},
         {"@type": "WebSite", "@id": f"{base}/#site", "url": f"{base}/", "name": SITE_NAME, "publisher": {"@id": f"{base}/#org"}},
         {"@type": "Organization", "@id": f"{base}/#org", "name": SITE_NAME, "url": f"{base}/",
-         "logo": f"{base}/static/icon-512.png"},
+         "logo": f"{base}/static/icon-512.png", "sameAs": [REPO]},
         app_node,
     ]
     if page.get("kind") == "guide":
         graph.append({"@type": "Article", "@id": f"{url}#article", "headline": re.sub("<[^>]+>", "", page["h1"]),
-                      "description": page["description"], "dateModified": UPDATED, "inLanguage": "en-GB",
+                      "description": page["description"], "datePublished": PUBLISHED, "dateModified": UPDATED, "inLanguage": "en-GB",
                       "author": {"@id": f"{base}/#org"}, "publisher": {"@id": f"{base}/#org"}, "mainEntityOfPage": {"@id": f"{url}#page"},
                       "image": f"{base}/static/og.png"})
     if page.get("faq"):
@@ -202,7 +202,7 @@ def home_extras(index_html: str, base: str) -> str:
         data["@graph"] += [{"@type": "WebSite", "@id": f"{base}/#site", "url": f"{base}/", "name": SITE_NAME,
                             "publisher": {"@id": f"{base}/#org"}},
                            {"@type": "Organization", "@id": f"{base}/#org", "name": SITE_NAME, "url": f"{base}/",
-                            "logo": f"{base}/static/icon-512.png"}]
+                            "logo": f"{base}/static/icon-512.png", "sameAs": [REPO]}]
     h = index_html[:m.start(2)] + "\n" + json.dumps(data, indent=2, ensure_ascii=False) + "\n" + index_html[m.end(2):]
     h = h.replace("<!--SHARED-->", shared_html(), 1)
     return h.replace("<!--CRUMBS-->", "").replace("<!--PAGE-BODY-->\n", "").replace("<!--/PAGE-BODY-->\n", "")
@@ -216,6 +216,23 @@ def sitemap_urls(base: str) -> list[str]:
 
 def llms_pages(base: str) -> str:
     return "\n".join(f"- [{p['nav']}]({base}{page_path(p['slug'])}): {p['description']}" for p in PAGES)
+
+
+def llms_sections(base: str) -> str:
+    """The link lists of /llms.txt, in the llmstxt.org format: H2 sections of "- [name](url): notes",
+    with the less essential ones under "## Optional"."""
+    from . import i18n
+    link = lambda p: f"- [{p['nav']}]({base}{page_path(p['slug'])}): {p['description']}"
+    tools = "\n".join(link(p) for p in PAGES if p.get("kind", "tool") == "tool")
+    guides = "\n".join(link(p) for p in PAGES if p.get("kind") == "guide")
+    info = "\n".join(link(p) for p in PAGES if p.get("kind") == "info")
+    langs = "\n".join(f"- [{mod.NAME}]({base}/{mod.LANG.lower()}/): UnMeta in {mod.NAME} ({mod.LANG}), "
+                      f"{len(mod.PAGES)} pages" for mod in i18n.LANGS.values())
+    return (f"## Tools\n\n- [UnMeta]({base}/): The tool itself: choose files, see what they reveal, download clean copies.\n{tools}\n\n"
+            f"## Guides\n\n{guides}\n\n"
+            f"## Docs\n\n- [Full text of every page]({base}/llms-full.txt): Every English page above as plain Markdown, in one file.\n"
+            f"- [Source code]({REPO}): The engine, server and tests (MIT licence).\n\n"
+            f"## Optional\n\n{info}\n{langs}\n")
 
 
 def _text(h: str) -> str:
@@ -291,6 +308,7 @@ def render_translated(index_html: str, mod, page, base: str) -> str:
         body = body.replace(f'href="{_i18n.english_path(p["key"])}"', f'href="/{p["slug"]}/"')
     body = body.replace('<a href="/">UnMeta</a>', f'<a href="/{prefix}/">UnMeta</a>')
     body = body.replace("<!--PAGE-LINKS-->", page_links_translated(mod), 1)
+    body = body.replace("<!--LANG-SWITCH-->", lang_switch(mod.LANG, page["key"]), 1)
     body = body.replace('<nav class="foot-nav"', lang_links(page["key"]) + '\n    <nav class="foot-nav"', 1)
     return head + "</head>" + body
 
@@ -306,3 +324,22 @@ def lang_links(key: str) -> str:
         return ""
     return '<p class="foot-langs">' + " · ".join(
         f'<a href="{path}" hreflang="{code}" lang="{code}">{_html.escape(_lang_name(code))}</a>' for code, path in alts.items()) + "</p>"
+
+
+LANG_LABEL = {"en": "Language", "es": "Idioma", "pt-BR": "Idioma", "de": "Sprache", "fr": "Langue", "hi": "भाषा"}
+
+
+def lang_switch(current: str, key: str) -> str:
+    """The header's language picker: this page in each language, or that language's home page if it isn't translated."""
+    alts = _i18n.alternates(key)
+    items = []
+    for code in ["en", *_i18n.LANGS]:
+        path = alts.get(code) or ("/" if code == "en" else f"/{code.lower()}/")
+        cur = ' aria-current="page"' if code == current else ""
+        items.append(f'<li><a href="{path}" hreflang="{code}" lang="{code}"{cur}>{_html.escape(_lang_name(code))}</a></li>')
+    short = current.split("-")[0].upper()
+    label = LANG_LABEL.get(current, "Language")
+    return (f'<details class="menu langs" id="langs"><summary class="text-btn" aria-label="{label}: {_html.escape(_lang_name(current))}">'
+            '<svg class="ic" aria-hidden="true" focusable="false"><use href="#i-globe"/></svg>'
+            f'<span class="lang-code">{short}</span></summary>'
+            f'<div class="menu-panel lang-panel"><p class="label">{label}</p><ul>{"".join(items)}</ul></div></details>')

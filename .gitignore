@@ -20,3 +20,6 @@ metaclean/static/axe-tmp.js
 .vscode/
 build/
 .vercel/
+.venv-build/
+.vercel
+.env*

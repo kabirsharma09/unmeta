@@ -58,35 +58,40 @@ LLMS_TXT = """# UnMeta
 UnMeta reads the hidden details stored inside photo, video, audio and document files and removes them losslessly. It does all of this in the browser, so files are never uploaded. There is no account, no ads and no daily limit. After the first visit it also works offline.
 
 Key facts: 0 bytes of the user's files are sent anywhere; photos up to 200 MB; videos and recordings up to 4 GB; 30+ formats; picture and sound data stay byte-for-byte identical, and every clean copy is re-read to check nothing private stayed.
-Full text of every page: /llms-full.txt
 
-## What it finds and removes
+**What it finds and removes**
+
 - Where it was taken: GPS coordinates and place names (EXIF GPS, XMP, IPTC)
 - What it was taken with: camera and phone make and model, lens, serial numbers, device names
 - Who took it and when: author, copyright, owner name, capture dates and time zones, document IDs
 - AI labels: C2PA Content Credentials (JUMBF), IPTC Digital Source Type (trainedAlgorithmicMedia, compositeWithTrainedAlgorithmicMedia), XMP CreatorTool and edit history, Stable Diffusion and ComfyUI prompt text in PNG files
 - Hidden copies: embedded thumbnails, multi-picture data and motion-photo video
 
-## Videos and audio
+**Videos and audio**
+
 - MP4, MOV, M4V and 3GP videos; M4A voice memos, MP3 and WAV recordings
 - Removes Apple and Android location (ISO 6709), make and model, recording dates, names, XMP and C2PA boxes, ID3 tags, RIFF INFO, Broadcast WAV and iXML chunks
 - Video frames and audio samples are copied byte for byte; MP4 and MOV files keep their exact size. Files up to 4 GB are read in slices, never loaded whole
 
-## How it cleans
+**How it cleans**
+
 - JPEG, PNG and WebP are rebuilt block by block; the compressed picture data is copied byte for byte.
 - HEIC, HEIF, AVIF, TIFF and RAW are cleaned in place by blanking metadata; picture data is untouched.
 - Every cleaned photo is scanned again and its picture data compared with the original.
 - Colour profile and rotation are kept by default so photos look the same.
 
-## Limits
+**Limits**
+
 - It cannot remove what is visible in the picture or audible in a recording (faces, signs, reflections, voices).
 - It cannot remove invisible pixel watermarks such as Google SynthID.
 - Removing an AI label doesn't change how an image was made; many platforms and some laws require disclosure of AI content.
 
-## Formats
+**Formats**
+
 Photos: JPEG, PNG, WebP, HEIC, HEIF, AVIF, TIFF, DNG, CR2, CR3, NEF, ARW, ORF, RW2, RAF. Videos: MP4, MOV, M4V, 3GP. Audio: M4A, MP3, WAV. Documents: PDF, DOCX, XLSX, PPTX (author, company, template path, dates and hidden previews removed; comments and tracked changes shown, never removed).
 
-## Privacy
+**Privacy**
+
 UnMeta processes files entirely in the browser (a Web Worker); the server only serves the page, and the page's Content-Security-Policy (connect-src 'none') blocks it from sending data anywhere. A service worker keeps an offline copy of the app's own files only. No accounts, cookies or analytics.
 """
 # The page may not send anything anywhere (connect-src 'none'). The service worker gets its own policy: it may fetch
@@ -245,7 +250,7 @@ def create_app() -> Flask:
             resp.headers["Cache-Control"] = "no-cache"
         elif path.startswith("/static/fonts/") or (path.startswith("/static/") and request.args.get("v")):
             resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        elif path.startswith("/static/") or path in ("/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt", "/manifest.webmanifest", "/favicon.ico"):
+        elif path.startswith("/static/") or path in ("/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt", "/.well-known/security.txt", "/manifest.webmanifest", "/favicon.ico"):
             resp.headers["Cache-Control"] = "public, max-age=86400"
         elif path == "/":
             resp.headers["Cache-Control"] = "no-cache"
@@ -274,7 +279,8 @@ def create_app() -> Flask:
             html = html.replace('"@id": "#app",', f'"@id": "{PUBLIC_URL}/#app",\n      "url": "{PUBLIC_URL}/",')
         return html
 
-    def finish(html: str) -> str:
+    def finish(html: str, key: str = "") -> str:
+        html = html.replace("<!--LANG-SWITCH-->", SITE.lang_switch("en", key), 1)
         return html.replace("<!--PAGE-LINKS-->", SITE.page_links())
 
     @app.get("/")
@@ -296,7 +302,7 @@ def create_app() -> Flask:
             html = SITE.render_translated(render_index(), translated[0], translated[1], PUBLIC_URL)
         else:
             html = SITE.add_hreflang(SITE.render(render_index(), page, PUBLIC_URL), page["slug"], PUBLIC_URL)
-        return app.response_class(finish(html), mimetype="text/html")
+        return app.response_class(finish(html, page["slug"] if page else ""), mimetype="text/html")
 
     @app.get("/sw.js")
     def service_worker():
@@ -328,16 +334,39 @@ def create_app() -> Flask:
 
     @app.get("/sitemap.xml")
     def sitemap():
+        """Every page, with lastmod, and its versions in other languages (Google's sitemap hreflang format)."""
         if not PUBLIC_URL:
             abort(404)
-        urls = "".join(f"<url><loc>{u}</loc><lastmod>{UPDATED}</lastmod></url>" for u in SITE.sitemap_urls(PUBLIC_URL))
-        xml = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-               f'{urls}<url><loc>{PUBLIC_URL}/llms.txt</loc></url><url><loc>{PUBLIC_URL}/llms-full.txt</loc></url></urlset>\n')
+        from . import i18n
+        u = PUBLIC_URL
+        keys = [("", f"{u}/")] + [(p["slug"], f"{u}/{p['slug']}/") for p in BY_SLUG.values()]
+        keys += [(p["key"], f"{u}/{slug}/") for slug, (_, p) in i18n.TRANSLATED.items()]
+        out = []
+        for key, loc in keys:
+            alts = i18n.alternates(key)
+            links = ""
+            if len(alts) > 1:
+                links = "".join(f'<xhtml:link rel="alternate" hreflang="{lang}" href="{u}{path}"/>' for lang, path in alts.items())
+                links += f'<xhtml:link rel="alternate" hreflang="x-default" href="{u}{alts["en"]}"/>'
+            out.append(f"<url><loc>{loc}</loc><lastmod>{UPDATED}</lastmod>{links}</url>")
+        xml = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+               'xmlns:xhtml="http://www.w3.org/1999/xhtml">' + "".join(out) + "</urlset>\n")
         return app.response_class(xml, mimetype="application/xml")
 
     @app.get("/llms.txt")
     def llms():
-        return app.response_class(LLMS_TXT + "\n## Pages\n" + SITE.llms_pages(PUBLIC_URL) + "\n", mimetype="text/markdown")
+        return app.response_class(LLMS_TXT + "\n" + SITE.llms_sections(PUBLIC_URL), mimetype="text/markdown")
+
+    @app.get("/.well-known/security.txt")
+    def security_txt():
+        """RFC 9116: how to report a security problem. Expires half a year after each build."""
+        from datetime import datetime, timedelta, timezone
+        expires = (datetime.now(timezone.utc) + timedelta(days=182)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        lines = [f"Contact: {SITE.REPO}/security/advisories/new", f"Expires: {expires}", "Preferred-Languages: en",
+                 f"Policy: {SITE.REPO}/security/policy"]
+        if PUBLIC_URL:
+            lines.append(f"Canonical: {PUBLIC_URL}/.well-known/security.txt")
+        return app.response_class("\n".join(lines) + "\n", mimetype="text/plain")
 
     @app.get("/llms-full.txt")
     def llms_full():
@@ -509,7 +538,7 @@ def export(out_dir, public_url: str = "") -> list[str]:
             shutil.rmtree(out)
         (out / "static").mkdir(parents=True)
         written = []
-        routes = {"/": "index.html", "/sw.js": "sw.js", "/robots.txt": "robots.txt", "/llms.txt": "llms.txt", "/llms-full.txt": "llms-full.txt",
+        routes = {"/": "index.html", "/sw.js": "sw.js", "/robots.txt": "robots.txt", "/llms.txt": "llms.txt", "/llms-full.txt": "llms-full.txt", "/.well-known/security.txt": ".well-known/security.txt",
                   "/manifest.webmanifest": "manifest.webmanifest", "/favicon.ico": "favicon.ico"}
         if PUBLIC_URL:
             routes["/sitemap.xml"] = "sitemap.xml"
@@ -545,31 +574,47 @@ def export(out_dir, public_url: str = "") -> list[str]:
             f"/sw.js\n  Content-Security-Policy: {SW_CSP}\n  Cache-Control: no-cache\n\n"
             "/static/fonts/*\n  Cache-Control: public, max-age=31536000, immutable\n")
         written.append("_headers")
-        # Vercel ignores _headers. Its rules all apply at once, so each Content-Security-Policy source is written to
-        # match a disjoint set of paths: one policy for the worker, one for the service worker, one for everything else.
-        base = [{"key": k, "value": v} for k, v in SECURITY_HEADERS.items()]
-        if PUBLIC_URL.startswith("https://"):
-            base.append({"key": "Strict-Transport-Security", "value": HSTS})
-        if not PUBLIC_URL:
-            base.append({"key": "X-Robots-Tag", "value": "noindex, nofollow"})
-        no_cache = {"key": "Cache-Control", "value": "no-cache"}
-        vercel = {
-            "$schema": "https://openapi.vercel.sh/vercel.json",
-            "trailingSlash": True,
-            "headers": [
-                {"source": "/(.*)", "headers": base},
-                {"source": "/((?!static/engine\\.worker\\.js$|sw\\.js$).*)", "headers": [{"key": "Content-Security-Policy", "value": PAGE_CSP}]},
-                {"source": "/((?!static/).*)", "headers": [no_cache]},
-                {"source": "/static/engine.worker.js", "headers": [{"key": "Content-Security-Policy", "value": WORKER_CSP}]},
-                {"source": "/sw.js", "headers": [{"key": "Content-Security-Policy", "value": SW_CSP}]},
-                {"source": "/static/fonts/(.*)", "headers": [{"key": "Cache-Control", "value": "public, max-age=31536000, immutable"}]},
-            ],
-        }
-        (out / "vercel.json").write_text(_json_mod.dumps(vercel, indent=2) + "\n")
+        (out / "vercel.json").write_text(_json_mod.dumps(vercel_config(PUBLIC_URL), indent=2) + "\n")
         written.append("vercel.json")
         return written
     finally:
         PUBLIC_URL = old
+
+
+# Vercel builds the site from the repository: it installs the package, runs the static export, and serves it
+# with these headers. scripts/write_vercel_json.py writes the root vercel.json from this; a test keeps them in sync.
+VERCEL_URL = "https://unmeta.vercel.app"
+
+
+def vercel_config(public_url: str, build: bool = False) -> dict:
+    """Vercel's settings. Vercel ignores _headers, and its rules all apply at once, so each Content-Security-Policy
+    source matches a disjoint set of paths: one for the worker, one for the service worker, one for everything else."""
+    base = [{"key": k, "value": v} for k, v in SECURITY_HEADERS.items()]
+    if public_url.startswith("https://"):
+        base.append({"key": "Strict-Transport-Security", "value": HSTS})
+    if not public_url:
+        base.append({"key": "X-Robots-Tag", "value": "noindex, nofollow"})
+    cfg = {"$schema": "https://openapi.vercel.sh/vercel.json"}
+    if build:
+        cfg |= {
+            "framework": None,
+            "installCommand": "python3 -m venv .venv-build && .venv-build/bin/pip install --quiet .",
+            "buildCommand": f".venv-build/bin/python -m metaclean export build/unmeta --public-url {public_url}",
+            "outputDirectory": "build/unmeta",
+            "git": {"deploymentEnabled": {"private-history": False}},
+        }
+    cfg |= {
+        "trailingSlash": True,
+        "headers": [
+            {"source": "/(.*)", "headers": base},
+            {"source": "/((?!static/engine\\.worker\\.js$|sw\\.js$).*)", "headers": [{"key": "Content-Security-Policy", "value": PAGE_CSP}]},
+            {"source": "/((?!static/).*)", "headers": [{"key": "Cache-Control", "value": "no-cache"}]},
+            {"source": "/static/engine.worker.js", "headers": [{"key": "Content-Security-Policy", "value": WORKER_CSP}]},
+            {"source": "/sw.js", "headers": [{"key": "Content-Security-Policy", "value": SW_CSP}]},
+            {"source": "/static/fonts/(.*)", "headers": [{"key": "Cache-Control", "value": "public, max-age=31536000, immutable"}]},
+        ],
+    }
+    return cfg
 
 
 def run(port=8765, open_browser=True):
