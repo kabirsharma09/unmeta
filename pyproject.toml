@@ -12,7 +12,7 @@ dependencies = ["pillow>=11.3", "pillow-heif>=0.18", "flask>=3.0", "reportlab>=4
 
 [project.optional-dependencies]
 raw = ["rawpy>=0.21"]
-dev = ["pytest>=8"]
+dev = ["pytest>=9.2.0"]
 
 [project.scripts]
 unmeta = "metaclean.cli:main"
