@@ -1,11 +1,14 @@
-# After Vercel finishes a production deploy of main, tell IndexNow (Bing and others) about every page.
+# After Vercel reports a successful deploy of main (its commit status), tell IndexNow (Bing and others)
+# about every page in the live sitemap.
 name: IndexNow
-on: deployment_status
+on: status
 permissions:
   contents: read
 jobs:
   ping:
-    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'
+    if: >-
+      github.event.context == 'Vercel' && github.event.state == 'success' &&
+      contains(github.event.branches.*.name, 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
