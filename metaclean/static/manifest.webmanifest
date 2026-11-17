@@ -1,0 +1,40 @@
+{
+  "id": "/",
+  "name": "UnMeta",
+  "short_name": "UnMeta",
+  "categories": [
+    "photo",
+    "utilities",
+    "privacy"
+  ],
+  "description": "Remove hidden metadata from photos, videos and documents in your browser. Nothing is uploaded.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "lang": "en-GB",
+  "background_color": "#f6f2ea",
+  "theme_color": "#17140f",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/static/mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

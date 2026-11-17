@@ -1,0 +1,60 @@
+# Runs both engines' tests, checks the browser engine bundle is up to date, and builds the static site.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: engine/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Engine tests (photos, videos, audio, fuzzing)
+        run: npm test
+      - name: The browser bundle matches the engine source
+        run: |
+          npm run build:web
+          git diff --exit-code -- ../metaclean/static/engine.worker.js
+
+  site:
+    needs: [python, engine]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e .
+      - name: Build the static site
+        # Set the repository variable PUBLIC_URL (e.g. https://metaclean.example) to turn on indexing and HSTS.
+        run: metaclean export site --public-url "${{ vars.PUBLIC_URL }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site
+          if-no-files-found: error

@@ -1,0 +1,147 @@
+(opens in a new tab)
+0 bytes
+0 details · clean copy ready
+4 GB
+4 details exposed
+A few files a day, or a size cap
+A list of every detail found, for your records.
+AI labels
+AI labels (C2PA, IPTC)
+AI labels on Facebook, TikTok, LinkedIn
+About
+About UnMeta
+Account and ads
+Actions
+Add a whole folder
+Add photos
+An example photo exposes its location, phone, owner and an AI label. UnMeta draws a black bar over each one as it removes it.
+Audio
+Audio and voice memos
+Breadcrumb
+Buy me a coffee
+C2PA Content Credentials
+Can't change what's in the picture
+Choose files
+Choose files to clean
+Clean
+Clean a document
+Clean a folder in place
+Clean photos
+Cleaning progress
+Close
+Colours and rotation always stay, so photos look the same. Video and sound are never touched.
+Content Credentials
+Device and serial
+Documents
+Does Discord remove metadata?
+Does Instagram remove metadata?
+Does Telegram remove metadata?
+Does WhatsApp share location?
+Don't take our word for it:
+Done
+Download a report
+Drop to add
+EXIF remover
+Example: a photo exposes its location, phone, owner and an AI label, then UnMeta removes them
+Faces, street signs, screens and reflections stay visible, and voices stay audible. So do invisible watermarks woven into the pixels or sound, like Google's SynthID.
+Footer
+For AI assistants
+Found and removed
+Free and ad-free. If it helped,
+Free, no ads
+Free, private and lossless. Try it with your next photo, video or document.
+Got it
+Guides
+HEIC metadata
+Hidden thumbnails
+Includes the photos and videos in every folder inside it.
+Instagram “AI info”
+JPG, HEIC, RAW
+Just check a photo
+Keep
+Limits
+Location
+Location (GPS)
+Location, device and serial numbers, names, dates, AI labels and hidden copies stored inside the file.
+MP3, M4A
+MP4, MOV
+Many platforms ask you to say when content was made with AI. Check their rules before you post.
+Menu
+More options
+Most of them upload your file to clean it. UnMeta does the same job without the file ever leaving your device.
+Most online removers
+Names and dates
+Never leaves your browser
+Never uploaded
+No account, no ads, no tracking
+No quality loss
+No sign-up or limits
+None per day. Videos up to 4 GB
+Nothing private
+Often missed
+Often re-saved or re-compressed
+PDF metadata
+PDF, Office
+PDFs
+Pause
+Photos
+Photos and videos are read and cleaned inside this page and never uploaded. They're read only while the page is open and forgotten when you start over or close it.
+Photos up to 200 MB. Videos and recordings up to 4 GB.
+Pick a photo and UnMeta lists what it gives away: where it was taken, the phone and its serial number, your name, the date and any AI label. Then it removes those details in your browser and leaves the picture exactly as it was.
+Picture and sound
+Privacy
+Proof
+Question
+Remove
+Remove location from photos
+Remove metadata from audio
+Remove metadata from photos
+Remove metadata from videos
+Removes
+Removes hidden details
+Removing an AI label doesn't change how something was made
+Save into the folder itself. Chrome and Edge only.
+See the
+See what a photo reveals
+Share the moment,
+Sign-up for more, ads on the page
+Site
+Skip to content
+Start over
+Stays in your browser
+The free metadata remover that never sees your files. Works offline. No cookies, analytics or accounts.
+Trust their privacy policy
+Turn off your Wi-Fi now and clean a photo: it still works. After your first visit it even opens offline. The browser also blocks this page from uploading anything.
+UnMeta compared with upload-based removers
+UnMeta home
+UnMeta in numbers
+UnMeta needs JavaScript to read and clean photos and videos in your browser. Nothing is sent anywhere.
+UnMeta vs other removers
+Untouched, checked byte for byte
+Uploaded to their server
+Videos
+What UnMeta can and can't do
+What UnMeta promises
+What is EXIF data?
+What should stay?
+Where your file goes
+Which apps remove metadata?
+Why not any online metadata remover?
+Word, Excel, PowerPoint
+Word, Excel, PowerPoint author
+Works with
+Works with Wi-Fi off; every copy re-checked
+You can check it yourself
+You download clean copies. Originals change only if you choose to replace them when cleaning a folder.
+Your originals stay as they are
+animation
+buy me a coffee
+formats: photos, RAW, video, audio, PDF and Office.
+not the details.
+of your files sent anywhere. The page is blocked from uploading.
+or drop or paste photos, videos and documents here
+picture and sound, byte for byte. Checked on every copy.
+side-by-side with named tools
+turn off your Wi-Fi and try it
+videos and recordings, with no daily limit and no sign-up.
+Source code

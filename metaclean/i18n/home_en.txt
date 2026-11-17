@@ -1,0 +1,47 @@
+English source for each language's HOME page (key ""). Translate it into a page dict like the others.
+(Not loaded by the site; it's reference text for translators.)
+
+slug: "<prefix>"            e.g. "es"
+nav: "Home" (in the language)
+kind: "tool"
+title: "Remove Metadata from Photos, Videos & PDFs, Free and No Upload | UnMeta"   (localise; keep "| UnMeta"; ≤ 75 chars)
+description: "Free metadata remover that runs in your browser. Remove EXIF, GPS location, AI labels and author names from photos, videos, audio and PDFs. Nothing uploaded, no sign-up, no quality loss."  (50-175 chars)
+h1: 'Clean your photos and videos <mark class="swipe">before</mark> you share them.'
+lead: "Every photo and video carries hidden details: where it was taken, the phone that took it, who you are and whether AI made it. UnMeta shows you what's there and removes it, without uploading anything or changing a single pixel or sound."
+
+body sections (use sec(), ul(), table() from metaclean.pages):
+
+1. sec("Five things a photo or video can say about you",
+   "<p><strong>Short answer:</strong> photo metadata is information saved inside the file next to the picture. Phones and apps add it automatically, and it travels with the photo when you share it.</p>" + ul(
+   "<strong>Where it was taken:</strong> exact position, often accurate to a few metres. Enough to find a home or a school.",
+   "<strong>What it was taken with:</strong> phone or camera model, lens and serial number. A serial number links every photo from one device.",
+   "<strong>Who took it and when:</strong> your name, the device's name, and the date, time and time zone of every shot.",
+   "<strong>AI labels:</strong> Content Credentials (C2PA), IPTC source types and AI prompts. Instagram, LinkedIn and TikTok read them.",
+   "<strong>Hidden copies:</strong> thumbnails and motion-photo video saved inside the file can show what you cropped out."))
+
+2. sec("Check it yourself", ul(
+   "<strong>Turn off your Wi-Fi.</strong> Then clean a photo. It still works, because the photo is read and cleaned inside your browser. The page isn't allowed to send anything: its security policy says so, and your browser enforces it.",
+   "<strong>Compare the picture.</strong> UnMeta edits only the details around the picture and never re-saves the picture itself. Video frames and sound are copied straight from the original file.",
+   "<strong>Look inside the clean copy.</strong> Open it in any metadata viewer and the details are gone. UnMeta also reads every copy again from scratch and tells you if anything stayed."))
+
+3. sec("What it can’t do", ul(
+   "It can’t change what’s visible in the picture or audible in a recording: faces, street signs, voices.",
+   "It can’t remove invisible watermarks woven into the pixels, such as Google SynthID.",
+   "Removing an AI label doesn’t change how an image was made. Many platforms, and some laws, ask you to disclose AI content."))
+
+steps:
+ ("Choose files", "Pick photos, videos, recordings or documents, or drop a whole folder.")
+ ("See what they reveal", "Each file lists its location, device, names, dates and AI labels in plain words.")
+ ("Clean and download", "Press Clean. Each copy is checked again, then you download it.")
+
+faq (translate all 8):
+ ("What is photo metadata?", "Photo metadata is information saved inside a photo file alongside the picture: where and when it was taken, the camera or phone used, its serial number, the author, editing history and, increasingly, labels saying whether AI made or edited it. It travels with the photo when you share it, unless the app or website removes it.")
+ ("Are my files uploaded anywhere?", "No. UnMeta reads and cleans files inside your web browser, so they never leave your device. They're read only while the page is open and forgotten when you start over or close it.")
+ ("Does removing metadata reduce quality?", "No. UnMeta never re-compresses a photo or video. It removes the hidden details around the picture or sound and checks that the picture data is byte-for-byte identical to the original.")
+ ("Is UnMeta free?", "Yes. There's no account, no ads and no daily limit. Photos can be up to 200 MB, and videos and recordings up to 4 GB.")
+ ("Does UnMeta work offline?", "Yes. After your first visit, UnMeta is saved in your browser, so it opens and cleans files with no internet connection.")
+ ("Which file formats does UnMeta support?", "Photos: JPEG, PNG, WebP, HEIC, AVIF, TIFF and RAW. Videos: MP4 and MOV. Audio: M4A, MP3 and WAV. Documents: PDF, Word, Excel and PowerPoint.")
+ ("Can UnMeta remove invisible AI watermarks like SynthID?", "No. Invisible watermarks such as Google SynthID are part of the picture itself, not details stored around it, so no metadata tool can remove them.")
+ ("Do I still need to say an image was made with AI?", "Removing an AI label doesn't change how an image was made. Many platforms, and some laws, ask you to disclose AI-generated or AI-edited content. Check the rules that apply to you before you post.")
+
+related: ["remove-metadata-from-photos", "remove-location-from-photos", "remove-ai-info-instagram"]

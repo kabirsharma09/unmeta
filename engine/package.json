@@ -1,0 +1,21 @@
+{
+  "name": "unmeta-engine",
+  "version": "1.0.0",
+  "dependencies": {
+    "pako": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/pako": "^2.0.4",
+    "esbuild": "^0.24.2",
+    "typescript": "~6.0.3",
+    "@types/node": "^22.10.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "build:web": "esbuild src/worker.ts --bundle --format=iife --minify --target=es2020 --legal-comments=none --outfile=../metaclean/static/engine.worker.js"
+  },
+  "private": true,
+  "description": "UnMeta's metadata engine: reads and removes hidden details from photos, video, audio and documents, losslessly, in the browser.",
+  "license": "MIT"
+}

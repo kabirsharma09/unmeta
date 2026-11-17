@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en-GB" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' blob:; media-src blob:; font-src 'self'; manifest-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="x-dns-prefetch-control" content="off">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Remove Metadata from Photos, Videos &amp; PDFs, Free and No Upload | UnMeta</title>
+<meta name="description" content="Free metadata remover that runs in your browser. Remove EXIF, GPS location, AI labels and author names from photos, videos, audio and PDFs. Nothing uploaded, no sign-up, no quality loss.">
+<!--SEO-HEAD-->
+<meta name="application-name" content="UnMeta">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e0e" media="(prefers-color-scheme: dark)">
+<meta name="referrer" content="no-referrer">
+<meta name="format-detection" content="telephone=no">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="UnMeta">
+<meta property="og:title" content="UnMeta: clean your photos and videos before you share them">
+<meta property="og:description" content="Find and remove hidden details in photos and videos, like location, camera, names and AI labels. Works in your browser and keeps quality exactly the same.">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="UnMeta: Clean your photos and videos before you share them. Beside it, a photo's location, phone and owner are highlighted and its AI label is blacked out.">
+<meta property="og:locale" content="en_GB">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/static/mark.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="engine" content="/static/engine.worker.js?v=1">
+<link rel="preload" href="/static/fonts/IBMPlexSansCondensed_700Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/IBMPlexSans_400Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/tokens.css?v=10">
+<link rel="stylesheet" href="/static/app.css?v=10">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "#page",
+      "name": "Remove metadata from photos, videos and PDFs, free and with no upload",
+      "description": "How to see and remove the hidden details stored in photos and videos, such as GPS location, camera serial numbers, names, dates and AI labels, without losing quality.",
+      "inLanguage": "en-GB",
+      "mainEntity": {
+        "@id": "#app"
+      },
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Exif",
+          "sameAs": "https://en.wikipedia.org/wiki/Exif"
+        },
+        {
+          "@type": "Thing",
+          "name": "Content Credentials (C2PA)",
+          "sameAs": "https://c2pa.org"
+        },
+        {
+          "@type": "Thing",
+          "name": "IPTC Photo Metadata",
+          "sameAs": "https://iptc.org/standards/photo-metadata/"
+        },
+        {
+          "@type": "Thing",
+          "name": "Extensible Metadata Platform (XMP)",
+          "sameAs": "https://en.wikipedia.org/wiki/Extensible_Metadata_Platform"
+        }
+      ],
+      "speakable": {
+        "@type": "SpeakableSpecification",
+        "cssSelector": [
+          "#homeTitle",
+          "#heroLead",
+          "#whatIs p"
+        ]
+      }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "#app",
+      "name": "UnMeta",
+      "applicationCategory": "UtilitiesApplication",
+      "applicationSubCategory": "Photo, video and document privacy",
+      "operatingSystem": "Any modern web browser, on computers and phones",
+      "browserRequirements": "Requires JavaScript and Web Workers. Works offline after the first visit.",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "description": "UnMeta shows what a photo or video reveals (GPS location, camera and serial numbers, names, dates, AI labels such as C2PA Content Credentials and IPTC Digital Source Type, and hidden preview images) and removes it inside the user's web browser, without uploading the file or changing picture or sound quality.",
+      "featureList": [
+        "Removes GPS location, camera and phone details, serial numbers, names and dates",
+        "Removes AI labels: C2PA Content Credentials, IPTC Digital Source Type and AI generator prompts",
+        "Removes hidden thumbnails, cover pictures and motion-photo video",
+        "Removes author, company, template path, editing time and hidden previews from PDF, Word, Excel and PowerPoint files; comments and tracked changes are shown, never removed",
+        "Lossless: compressed picture data, video frames and audio stay byte-for-byte identical",
+        "Runs entirely in the browser; files are never uploaded",
+        "Works offline after the first visit",
+        "Photos: JPEG, PNG, WebP, HEIC, AVIF, TIFF and RAW. Videos: MP4, MOV. Audio: M4A, MP3, WAV. Documents: PDF, DOCX, XLSX, PPTX"
+      ],
+      "fileFormat": [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/avif",
+        "image/tiff",
+        "video/mp4",
+        "video/quicktime",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/wav",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      ]
+    },
+    {
+      "@type": "HowTo",
+      "name": "How to remove hidden details from a photo or video",
+      "totalTime": "PT1M",
+      "tool": {
+        "@type": "HowToTool",
+        "name": "UnMeta"
+      },
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Choose photos or videos",
+          "text": "Drop photos, videos or folders onto UnMeta, or choose them from your computer or phone."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "See what they reveal",
+          "text": "UnMeta lists where each one was taken, what it was taken with, who took it and when, AI labels and hidden copies."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Download clean copies",
+          "text": "Choose what to keep, clean them and download the clean copies. UnMeta checks each one again afterwards."
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is photo metadata?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Photo metadata is information saved inside a photo file alongside the picture: where and when it was taken, the camera or phone used, its serial number, the author, editing history and, increasingly, labels saying whether AI made or edited it. It travels with the photo when you share it, unless the app or website removes it."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What does UnMeta remove from my photos?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "GPS location and place names, camera and phone model, serial numbers and device names, author names and dates, editing history, AI labels (C2PA Content Credentials, IPTC Digital Source Type and AI generator prompts) and hidden copies such as thumbnails and motion-photo video."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does removing photo metadata reduce quality?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. UnMeta never re-compresses a photo. It removes the hidden details around the picture and checks that the compressed picture data is byte-for-byte identical to the original."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Are my photos uploaded anywhere?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. UnMeta reads and cleans photos and videos inside your web browser, so they never leave your device. They're read only while the page is open and forgotten when you start over or close it."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does UnMeta work offline?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. After your first visit, UnMeta is saved in your browser, so it opens and cleans photos and videos with no internet connection."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I check that my photos aren't uploaded?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Turn off your Wi-Fi or unplug your network, then clean a photo. It still works, because everything happens inside your browser. The page is also built so the browser blocks it from sending data anywhere: it can't make uploads of any kind."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Isn't a screenshot enough to remove photo details?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A screenshot drops the original details, but it lowers quality, crops to your screen and adds new details of its own, such as your device and the time you took the screenshot. UnMeta removes the details and keeps the original picture exactly as it was."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can UnMeta remove invisible AI watermarks like SynthID?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Invisible watermarks such as Google SynthID are part of the picture itself, not details stored around it, so no metadata tool can remove them. Anything visible in the photo, like faces or street signs, also stays."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do I still need to say an image was made with AI?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Removing an AI label doesn't change how an image was made. Many platforms, and some laws, ask you to disclose AI-generated or AI-edited content. Check the rules that apply to you before you post."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does UnMeta work with videos and voice recordings?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. It removes the location, phone model, recording date, names and AI labels saved in MP4 and MOV videos and in M4A, MP3 and WAV recordings. The video and sound are copied exactly; only the details around them change. Videos can be up to 4 GB."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which file formats does UnMeta support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Photos: JPEG, PNG, WebP, HEIC and HEIF, AVIF, TIFF, and RAW formats including DNG, CR2, CR3, NEF, ARW, ORF, RW2 and RAF. Videos: MP4, MOV, M4V and 3GP. Audio: M4A voice memos, MP3 and WAV. Documents: PDF, Word, Excel and PowerPoint."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body data-screen="home">
+<!--ICONS:start--><svg hidden aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><!-- Generated by design/build.py --><symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></g></symbol><symbol id="i-camera" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.4-2h5l1.4 2h1.6A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/></g></symbol><symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.75"/><path d="M4.5 20c.9-3.9 3.9-6 7.5-6s6.6 2.1 7.5 6"/></g></symbol><symbol id="i-sparkle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M12 2.5l1.9 5.2 5.2 1.9-5.2 1.9L12 16.7l-1.9-5.2-5.2-1.9 5.2-1.9z"/><path fill="currentColor" stroke="none" d="M18.5 14.5l.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9z"/></g></symbol><symbol id="i-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="13" height="11" rx="2.5"/><path d="M7.5 19h10a3 3 0 0 0 3-3V8"/></g></symbol><symbol id="i-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></g></symbol><symbol id="i-chevron-right" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"/></g></symbol><symbol id="i-chevron-down" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></g></symbol><symbol id="i-download" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></g></symbol><symbol id="i-share" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5M7.5 8L12 3.5 16.5 8"/><path d="M8 11H6.5A1.5 1.5 0 0 0 5 12.5v6A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-6a1.5 1.5 0 0 0-1.5-1.5H16"/></g></symbol><symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></g></symbol><symbol id="i-image-plus" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5V17a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h5.5"/><path d="M4.5 16.5l4.2-4.2a1.5 1.5 0 0 1 2.1 0l5.7 5.7"/><path d="M18 3v6M15 6h6"/></g></symbol><symbol id="i-scan" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16"/><circle cx="12" cy="12" r="3"/></g></symbol><symbol id="i-shield-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.5c0 4.4-3 7.9-7 9.5-4-1.6-7-5.1-7-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.6"/></g></symbol><symbol id="i-restart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9"/><path d="M4.5 4.5V9H9"/></g></symbol><symbol id="i-eraser" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.4 4.6l5 5a1.5 1.5 0 0 1 0 2.1L12 19H7.6l-3-3a1.5 1.5 0 0 1 0-2.1l7.7-7.7a1.5 1.5 0 0 1 2.1-1.6z"/><path d="M9 9.5l5.5 5.5M12 19h8"/></g></symbol><symbol id="i-copyright" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M14.6 9.6a3.5 3.5 0 1 0 0 4.8"/></g></symbol><symbol id="i-aperture" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M14.5 4l-5 8.7M20.4 11.5h-10M17 18.8l-5-8.7M9.5 20l5-8.7M3.6 12.5h10M7 5.2l5 8.7"/></g></symbol><symbol id="i-pin-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 4.8A7 7 0 0 1 19 9.5c0 1.9-.9 3.9-2.1 5.6M14.7 17.9C13.3 19.7 12 21 12 21s-7-6.2-7-11.5c0-.8.1-1.6.4-2.3"/><path d="M3.5 3.5l17 17"/></g></symbol><symbol id="i-sparkle-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8L5.5 10l4.8-1.7z"/><path d="M3.5 3.5l17 17"/></g></symbol><symbol id="i-folder" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.5l2 2.5H18a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 17z"/></g></symbol><symbol id="i-files" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5h6.5L19 8v10.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M14 3.5V8h5"/></g></symbol><symbol id="i-report" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5H7.5A2.5 2.5 0 0 0 5 6v12a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 18V8.5z"/><path d="M14 3.5v5h5M8.5 13h7M8.5 16.5h5"/></g></symbol><symbol id="i-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></g></symbol><symbol id="i-alert" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8.5 15h-17z"/><path d="M12 10v4M12 17v.01"/></g></symbol><symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></g></symbol><symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.01"/></g></symbol><symbol id="i-eye-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l16 16M10.6 6.1A8.6 8.6 0 0 1 12 6c5 0 8.5 4.5 9.5 6-.5.8-1.5 2.1-3 3.4M6.6 7.7C4.6 9 3.2 10.9 2.5 12c1 1.5 4.5 6 9.5 6 1.5 0 2.9-.4 4.1-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></g></symbol><symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5m0 0L7.5 9M12 4.5L16.5 9M5 19.5h14"/></g></symbol><symbol id="i-pause" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="5.5" width="3.2" height="13" rx="1" fill="currentColor" stroke="none"/><rect x="13.8" y="5.5" width="3.2" height="13" rx="1" fill="currentColor" stroke="none"/></g></symbol><symbol id="i-play" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M8 5.8v12.4a1 1 0 0 0 1.5.86l10-6.2a1 1 0 0 0 0-1.72l-10-6.2A1 1 0 0 0 8 5.8z"/></g></symbol><symbol id="i-coffee" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 10h11v4.5a4.5 4.5 0 0 1-4.5 4.5h-2A4.5 4.5 0 0 1 5 14.5z"/><path d="M16 11h1.25a2.25 2.25 0 0 1 0 4.5H16"/><path d="M8.5 3.5c-.7.9-.7 1.9 0 2.8M12 3.5c-.7.9-.7 1.9 0 2.8"/></g></symbol><symbol id="i-external" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5M19 5l-8 8"/><path d="M17 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 5 18V8.5A1.5 1.5 0 0 1 6.5 7H11"/></g></symbol><symbol id="i-audio" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></g></symbol><symbol id="i-video" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="6" width="12" height="12" rx="2"/><path d="M15.5 10.5l5-3v9l-5-3z"/></g></symbol><symbol id="i-menu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></g></symbol><symbol id="i-arrow-right" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m0 0l-5.5-5.5M19 12l-5.5 5.5"/></g></symbol></svg><!--ICONS:end-->
+<svg class="scene-defs" aria-hidden="true" focusable="false"><defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3577"/><stop offset=".42" stop-color="#d9587a"/><stop offset=".78" stop-color="#ff9b52"/><stop offset="1" stop-color="#ffd27a"/></linearGradient>
+  <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a5d8c"/><stop offset="1" stop-color="#15304f"/></linearGradient>
+  <symbol id="scene" viewBox="0 0 320 200">
+    <rect width="320" height="132" fill="url(#sky)"/>
+    <circle cx="214" cy="120" r="27" fill="#fff1c4"/>
+    <path d="M0 116c30-10 52-24 82-22 26 2 40 18 66 22v18H0z" fill="#6b3f73"/>
+    <rect y="128" width="320" height="72" fill="url(#sea)"/>
+    <g fill="#ffd27a"><rect x="190" y="134" width="48" height="2.5" rx="1.2"/><rect x="198" y="142" width="32" height="2" rx="1" opacity=".85"/><rect x="204" y="150" width="22" height="2" rx="1" opacity=".7"/><rect x="208" y="158" width="14" height="1.6" rx=".8" opacity=".55"/></g>
+    <path d="M0 200v-38c22-6 38-20 62-20 20 0 30 10 46 14 14 4 26 0 34 6 10 8 6 22 14 38z" fill="#221a2b"/>
+    <path d="M96 144c0-5 2-9 5-9s5 4 5 9l1 12h-12z M98.5 133a3.5 3.5 0 1 0 7 0 3.5 3.5 0 1 0-7 0z" fill="#221a2b"/>
+    <path d="M118 52l6 4 6-4M140 40l5 3 5-3" fill="none" stroke="#2b2148" stroke-width="1.6" stroke-linecap="round"/>
+  </symbol>
+</defs></svg>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar" id="top">
+  <div class="bar-inner">
+    <a class="brand" href="/" aria-label="UnMeta home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect class="m-frame" x="1.5" y="1.5" width="29" height="29"/><rect class="m-hl" x="7" y="9" width="18" height="4"/><rect class="m-bar" x="7" y="17" width="18" height="6"/><rect class="m-scan" x="4" y="4" width="24" height="2"/></svg>
+      <span class="wordmark">unmeta</span>
+    </a>
+    <nav class="site-nav" aria-label="Site">
+      <a href="/remove-metadata-from-photos/">Photos</a>
+      <a href="/remove-metadata-from-video/">Videos</a>
+      <a href="/documents/">Documents</a>
+      <a href="/remove-ai-info-instagram/">AI labels</a>
+      <a href="/remove-location-from-photos/">Location</a>
+    </nav>
+    <details class="menu" id="menu">
+      <summary class="text-btn" aria-label="Menu"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg><span class="menu-text">Menu</span></summary>
+      <div class="menu-panel">
+        <p class="label">Remove metadata from</p>
+        <ul>
+          <li><a href="/remove-metadata-from-photos/">Photos</a></li>
+          <li><a href="/remove-metadata-from-video/">Videos</a></li>
+          <li><a href="/remove-metadata-from-audio/">Audio and voice memos</a></li>
+          <li><a href="/remove-metadata-from-pdf/">PDFs</a></li>
+          <li><a href="/remove-author-from-word/">Word, Excel, PowerPoint</a></li>
+        </ul>
+        <p class="label">Remove</p>
+        <ul>
+          <li><a href="/remove-location-from-photos/">Location (GPS)</a></li>
+          <li><a href="/remove-ai-info-instagram/">Instagram “AI info”</a></li>
+          <li><a href="/remove-content-credentials/">Content Credentials</a></li>
+          <li><a href="/check-photo-metadata/">Just check a photo</a></li>
+        </ul>
+      </div>
+    </details>
+    <div class="bar-actions">
+      <a class="text-btn coffee-nav" href="https://www.buymeacoffee.com/kabirsharma" target="_blank" rel="noopener noreferrer"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-coffee"/></svg><span class="cn-text">Buy me a coffee</span><span class="vh"> (opens in a new tab)</span></a>
+      <button id="aboutBtn" class="text-btn" type="button" aria-haspopup="dialog">About</button>
+      <button id="startOver" class="text-btn" type="button" hidden><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-restart"/></svg>Start over</button>
+    </div>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+  <div id="home" class="landing">
+    <section class="hero" aria-labelledby="homeTitle">
+      <div class="hero-copy">
+        <!--CRUMBS-->
+        <p class="eyebrow">Free metadata remover · photos, videos, audio, PDFs</p>
+        <h1 id="homeTitle" class="display">Clean your photos and videos <mark class="swipe">before</mark> you share&nbsp;them.</h1>
+        <p id="heroLead" class="lead">Every photo and video carries hidden details: where it was taken, the phone that took it, who you are and whether AI made it. UnMeta shows you what's there and removes it, without uploading anything or changing a single pixel or sound.</p>
+        <div class="tray" id="drop">
+          <label class="btn primary btn-xl" for="pick"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-image-plus"/></svg>Choose files</label>
+          <p class="drop-text"><span id="dropTitle">or drop or paste photos, videos and documents here</span><span class="muted" id="dropHint">Photos up to 200 MB. Videos and recordings up to 4 GB.</span></p>
+          <div class="can">
+            <p class="label" id="worksLabel">Works with</p>
+            <ul class="kinds" aria-labelledby="worksLabel">
+              <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg><span><b>Photos</b><small>JPG, HEIC, RAW</small></span></li>
+              <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-video"/></svg><span><b>Videos</b><small>MP4, MOV</small></span></li>
+              <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-audio"/></svg><span><b>Audio</b><small>MP3, M4A</small></span></li>
+              <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-files"/></svg><span><b>Documents</b><small>PDF, Office</small></span></li>
+            </ul>
+          </div>          <input id="pick" type="file" multiple aria-describedby="dropHint" accept="image/*,video/mp4,video/quicktime,video/3gpp,audio/mp4,audio/mpeg,audio/wav,audio/x-m4a,application/pdf,.pdf,.docx,.xlsx,.pptx,.docm,.xlsm,.pptm,.heic,.heif,.avif,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf,.pef,.srw,.tif,.tiff,.mp4,.m4v,.mov,.3gp,.m4a,.mp3,.wav">
+        </div>
+        <div class="can removes">
+          <p class="label" id="removesLabel">Removes</p>
+          <ul aria-labelledby="removesLabel">
+            <li><a href="/remove-location-from-photos/"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-pin-off"/></svg>Location</a></li>
+            <li><a href="/exif-remover/"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg>Device and serial</a></li>
+            <li><a href="/remove-author-from-word/"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-person"/></svg>Names and dates</a></li>
+            <li><a href="/remove-ai-info-instagram/"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-sparkle-off"/></svg>AI labels</a></li>
+            <li><a href="/remove-metadata-from-photos/"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg>Hidden thumbnails</a></li>
+          </ul>
+        </div>
+        <ul class="trust" aria-label="What UnMeta promises">
+          <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg>Never uploaded</li>
+          <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>No quality loss</li>
+          <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-person"/></svg>No sign-up or limits</li>
+          <li><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-shield-check"/></svg>Free, no ads</li>
+        </ul>
+        <p class="promise">Don't take our word for it: <a href="#why">turn off your Wi-Fi and try it</a>.</p>
+      </div>
+
+      <figure class="sheet-demo" id="demo" aria-label="Example: a photo exposes its location, phone, owner and an AI label, then UnMeta removes them">
+        <div class="sd-frame" aria-hidden="true">
+          <div class="film">
+            <p class="edge"><span>UNMETA 400</span><span>▸ 24</span><span>24A</span></p>
+            <div class="sd-photo">
+              <svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#scene"/></svg>
+              <span class="sd-scan"></span>
+              <span class="stamp sd-stamp">Clean</span>
+            </div>
+            <p class="edge"><span>▸ 25</span><span>SAFETY FILM</span><span>25A</span></p>
+          </div>
+          <dl class="sd-readout">
+            <div><dt>FILE</dt><dd>IMG_2041.HEIC</dd></div>
+            <div class="r r1"><dt>GPS</dt><dd><span class="v">51.5072, −0.1275</span><svg class="pencil-ring sd-ring" viewBox="0 0 200 48" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path pathLength="1" d="M18 30C10 14 70 5 132 6s70 10 62 24c-7 12-70 15-118 13C26 41 2 34 12 20c6-8 22-12 40-14"/></svg></dd></div>
+            <div class="r r2"><dt>DEVICE</dt><dd><span class="v">iPhone 15 Pro · C39XK1234</span></dd></div>
+            <div class="r r3"><dt>OWNER</dt><dd><span class="v">Jane Doe · 1 Mar 2026</span></dd></div>
+            <div class="r r4"><dt>AI</dt><dd><span class="v">trainedAlgorithmicMedia</span></dd></div>
+          </dl>
+          <p class="sd-status"><span class="sd-exposed">4 details exposed</span><span class="sd-clean">0 details · clean copy ready</span></p>
+        </div>
+        <button class="demo-toggle" id="demoToggle" type="button"><svg class="ic" aria-hidden="true" focusable="false"><use id="demoToggleIcon" href="#i-pause"/></svg><span id="demoToggleText">Pause</span><span class="vh"> animation</span></button>
+        <figcaption class="vh">An example photo exposes its location, phone, owner and an AI label. UnMeta draws a black bar over each one as it removes it.</figcaption>
+      </figure>
+    </section>
+
+    <!--PAGE-BODY-->
+    <section class="sec tasks" id="tasks" aria-labelledby="tasksTitle">
+      <div class="sec-body">
+        <h2 id="tasksTitle" class="headline reveal">What do you want to remove?</h2>
+        <div class="task-groups reveal">
+          <div><h3 class="label" id="byFile">By file</h3><ul class="task-grid" aria-labelledby="byFile"><li><a href="/remove-metadata-from-photos/"><span class="tile c-ink"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg></span><span class="t">Photos</span><span class="muted">JPG, HEIC, PNG, WebP, RAW</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li><li><a href="/remove-metadata-from-video/"><span class="tile c-ink"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-video"/></svg></span><span class="t">Videos</span><span class="muted">MP4 and MOV, up to 4 GB</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li><li><a href="/remove-metadata-from-audio/"><span class="tile c-ink"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-audio"/></svg></span><span class="t">Audio</span><span class="muted">MP3, M4A voice memos, WAV</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li><li><a href="/documents/"><span class="tile c-doc"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-files"/></svg></span><span class="t">Documents</span><span class="muted">PDF, Word, Excel, PowerPoint</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li></ul></div>
+          <div><h3 class="label" id="byDetail">By detail</h3><ul class="task-grid" aria-labelledby="byDetail"><li><a href="/remove-location-from-photos/"><span class="tile c-location"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-pin-off"/></svg></span><span class="t">Location</span><span class="muted">GPS from iPhone and Android</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li><li><a href="/remove-ai-info-instagram/"><span class="tile c-ai"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-sparkle-off"/></svg></span><span class="t">“AI info” label</span><span class="muted">Instagram, Facebook, Threads</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li><li><a href="/remove-author-from-word/"><span class="tile c-location"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-person"/></svg></span><span class="t">Author name</span><span class="muted">Word, Excel, PowerPoint, PDF</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li><li><a href="/check-photo-metadata/"><span class="tile c-lagoon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg></span><span class="t">Just looking</span><span class="muted">See what a file reveals</span><svg class="ic go" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a></li></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="reveals" aria-labelledby="revealsTitle">
+      <div class="sec-body">
+        <h2 id="revealsTitle" class="headline reveal">Five things a photo or video can say about you</h2>
+        <div id="whatIs" class="reveal"><p class="lead"><strong>Photo metadata</strong> is information saved inside the file next to the picture. Phones and apps add it automatically, and it travels with the photo when you share it. This is part of what one ordinary phone photo carries, printed the way a forensics tool shows it:</p></div>
+        <div class="dossier reveal">
+          <figure class="dump" aria-label="Example metadata printout for one photo">
+            <ol>
+<li><span class="k">File Name</span><span class="v">IMG_2041.HEIC</span></li>
+<li><span class="k">Make</span><span class="v">Apple</span></li>
+<li class=hit><span class="k">Camera Model Name</span><span class="v"><mark>iPhone 15 Pro</mark></span><b class=n>2</b></li>
+<li><span class="k">Lens Model</span><span class="v">iPhone 15 Pro back triple camera 6.765mm f/1.78</span></li>
+<li class=hit><span class="k">Body Serial Number</span><span class="v"><mark>C39XK1234</mark></span><b class=n>2</b></li>
+<li class=hit><span class="k">Date/Time Original</span><span class="v"><mark>2026:03:01 09:15:42</mark></span><b class=n>3</b></li>
+<li><span class="k">Offset Time</span><span class="v">+01:00</span></li>
+<li class=hit><span class="k">Artist</span><span class="v"><mark>Jane Doe</mark></span><b class=n>3</b></li>
+<li class=hit><span class="k">GPS Latitude</span><span class="v"><mark>51 deg 30' 25.92" N</mark></span><b class=n>1</b></li>
+<li class=hit><span class="k">GPS Longitude</span><span class="v"><mark>0 deg 7' 39.00" W</mark></span><b class=n>1</b></li>
+<li><span class="k">GPS Altitude</span><span class="v">11.2 m Above Sea Level</span></li>
+<li class=hit><span class="k">Digital Source Type</span><span class="v"><mark>trainedAlgorithmicMedia</mark></span><b class=n>4</b></li>
+<li class=hit><span class="k">Claim Generator</span><span class="v"><mark>Adobe Firefly</mark></span><b class=n>4</b></li>
+<li class=hit><span class="k">Thumbnail Image</span><span class="v"><mark>(Binary data 9136 bytes)</mark></span><b class=n>5</b></li>
+<li class=hit><span class="k">Motion Photo Video</span><span class="v"><mark>(Binary data, 1.8 s)</mark></span><b class=n>5</b></li>
+            </ol>
+            <figcaption>… and 61 more lines</figcaption>
+          </figure>
+          <ol class="notes">
+<li><b class="n" aria-hidden="true">1</b><h3>Where it was taken</h3><p>Exact position, often accurate to a few metres. Enough to find a home or a school.</p></li>
+<li><b class="n" aria-hidden="true">2</b><h3>What it was taken with</h3><p>Phone or camera model, lens and serial number. A serial number links every photo from one device.</p></li>
+<li><b class="n" aria-hidden="true">3</b><h3>Who took it and when</h3><p>Your name, the device's name, and the date, time and time zone of every shot.</p></li>
+<li><b class="n" aria-hidden="true">4</b><h3>AI labels</h3><p>Content Credentials (C2PA), IPTC source types and AI prompts. Instagram, LinkedIn and TikTok read them.</p></li>
+<li><b class="n" aria-hidden="true">5</b><h3>Hidden copies</h3><p>Thumbnails and motion-photo video saved inside the file can show what you cropped out.</p></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="how" aria-labelledby="howTitle">
+      <div class="sec-body">
+        <h2 id="howTitle" class="headline reveal">Clean a photo or video in under a minute</h2>
+        <ol class="steps3 strip reveal">
+          <li><span class="mini" aria-hidden="true"><svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#scene"/></svg></span><h3><span class="step-n">1</span>Choose photos</h3><p>Drop photos or whole folders, or pick them from your computer.</p></li>
+          <li><span class="mini" aria-hidden="true"><svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#scene"/></svg><span class="mini-tags"><i></i><i></i><i></i></span></span><h3><span class="step-n">2</span>See what they reveal</h3><p>Each photo lists only what matters, in plain words. Open a line to see why it matters.</p></li>
+          <li><span class="mini" aria-hidden="true"><svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#scene"/></svg><span class="mini-tags done"><i></i><i></i><i></i></span><span class="stamp mini-stamp">Clean</span></span><h3><span class="step-n">3</span>Download clean copies</h3><p>Choose what stays, clean, and download. Each copy is checked again first.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="sec" id="why" aria-labelledby="whyTitle">
+      <div class="sec-body">
+        <h2 id="whyTitle" class="headline reveal">Check it yourself</h2>
+        <p class="lead reveal">A privacy tool should be easy to doubt. Here are three ways to check this one.</p>
+        <ol class="checks reveal">
+          <li><h3>Turn off your Wi-Fi</h3><p>Then clean a photo. It still works, because the photo is read and cleaned inside your browser, and after your first visit UnMeta even opens with no connection. The page isn't allowed to send anything: its security policy says so, and your browser enforces it.</p>
+            <pre class="proof" tabindex="0" aria-label="The page's security policy">Content-Security-Policy: … <b>connect-src 'none'</b></pre></li>
+          <li><h3>Compare the picture</h3><p>UnMeta edits only the details around the picture and never re-saves the picture itself. It compares the picture data with the original before you download. Video frames and sound are copied straight from the original file.</p>
+            <pre class="bytes" tabindex="0" aria-label="Example byte comparison"><span class="label">Original</span> FF D8 FF E1 … 9A 3C 51 7E 02 B4
+<span class="label">Clean</span> FF D8 FF E0 … 9A 3C 51 7E 02 B4   <b>identical</b></pre></li>
+          <li><h3>Look inside the clean copy</h3><p>Open it in any metadata viewer and the lines above are gone. UnMeta also reads every copy again from scratch and tells you if anything stayed.</p></li>
+        </ol>
+        <p class="aside reveal">It reads JPEG, PNG, WebP, HEIC, AVIF and TIFF photos and raw files from Canon, Nikon, Sony, Fujifilm, Olympus and Panasonic, MP4 and MOV videos, and M4A, MP3 and WAV recordings. It recognises C2PA Content Credentials, IPTC Digital Source Type, XMP edit history, and Stable Diffusion and ComfyUI prompts.</p>
+      </div>
+    </section>
+
+    <section class="sec" id="compare" aria-labelledby="compareTitle">
+      <div class="sec-body">
+        <h2 id="compareTitle" class="headline reveal">Other ways to remove photo details</h2>
+        <dl class="ways reveal">
+          <div><dt>Take a screenshot</dt><dd>It drops the details, but you lose resolution, and your phone writes a fresh set of its own: its model and the time of the screenshot.</dd></div>
+          <div><dt>Re-save it in an editor</dt><dd>Some editors keep the location. Most re-compress the picture and add their own name to the file.</dd></div>
+          <div><dt>Upload it and trust the platform</dt><dd>Most social sites hide the location from other people, but they receive your original first, and they read any AI label before they remove it.</dd></div>
+        </dl>
+        <p class="verdict reveal">UnMeta removes the details and leaves the picture exactly as it was, <mark>without the photo leaving your browser</mark>.</p>
+      </div>
+    </section>
+
+    <!--SHARED-->
+    <section class="sec faq" id="faq" aria-labelledby="faqTitle">
+      <div class="sec-body">
+        <h2 id="faqTitle" class="headline reveal">Questions people ask</h2>
+      <div class="faq-list reveal">
+        <details class="qa"><summary><h3 class="qa-q">What is photo metadata?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>Photo metadata is information saved inside a photo file alongside the picture: where and when it was taken, the camera or phone used, its serial number, the author, editing history and, increasingly, labels saying whether AI made or edited it. It travels with the photo when you share it, unless the app or website removes it.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">What does UnMeta remove from my photos?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>GPS location and place names, camera and phone model, serial numbers and device names, author names and dates, editing history, AI labels (C2PA Content Credentials, IPTC Digital Source Type and AI generator prompts) and hidden copies such as thumbnails and motion-photo video.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Does removing photo metadata reduce quality?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>No. UnMeta never re-compresses a photo. It removes the hidden details around the picture and checks that the compressed picture data is byte-for-byte identical to the original.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Are my photos uploaded anywhere?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>No. UnMeta reads and cleans photos and videos inside your web browser, so they never leave your device. They're read only while the page is open and forgotten when you start over or close it.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Can I check that my photos aren't uploaded?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>Yes. Turn off your Wi-Fi or unplug your network, then clean a photo. It still works, because everything happens inside your browser. The page is also built so the browser blocks it from sending data anywhere: it can't make uploads of any kind.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Does UnMeta work offline?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>Yes. After your first visit, UnMeta is saved in your browser, so it opens and cleans photos and videos with no internet connection.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Isn't a screenshot enough to remove photo details?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>A screenshot drops the original details, but it lowers quality, crops to your screen and adds new details of its own, such as your device and the time you took the screenshot. UnMeta removes the details and keeps the original picture exactly as it was.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Can UnMeta remove invisible AI watermarks like SynthID?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>No. Invisible watermarks such as Google SynthID are part of the picture itself, not details stored around it, so no metadata tool can remove them. Anything visible in the photo, like faces or street signs, also stays.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Do I still need to say an image was made with AI?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>Removing an AI label doesn't change how an image was made. Many platforms, and some laws, ask you to disclose AI-generated or AI-edited content. Check the rules that apply to you before you post.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Does UnMeta work with videos and voice recordings?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>Yes. It removes the location, phone model, recording date, names and AI labels saved in MP4 and MOV videos and in M4A, MP3 and WAV recordings. The video and sound are copied exactly; only the details around them change. Videos can be up to 4 GB.</p></div></details>
+        <details class="qa"><summary><h3 class="qa-q">Which file formats does UnMeta support?<span class="pm" aria-hidden="true"></span></h3></summary>
+          <div class="qa-a"><p>Photos: JPEG, PNG, WebP, HEIC and HEIF, AVIF, TIFF, and RAW formats including DNG, CR2, CR3, NEF, ARW, ORF, RW2 and RAF. Videos: MP4, MOV, M4V and 3GP. Audio: M4A voice memos, MP3 and WAV. Documents: PDF, Word, Excel and PowerPoint.</p></div></details>
+      </div>
+      </div>
+    </section>
+
+    <!--/PAGE-BODY-->
+    <section class="cta" aria-labelledby="ctaTitle">
+      <h2 id="ctaTitle" class="headline">Share the moment, <mark>not the details.</mark></h2>
+      <p class="lead">Free, private and lossless. Try it with your next photo, video or document.</p>
+      <label class="btn inverse btn-lg" for="pick"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-image-plus"/></svg>Choose files</label>
+      <span class="cta-edge" aria-hidden="true">UNMETA 400 ▸ 36 ▸ 36A</span>
+    </section>
+  </div>
+
+  <section id="list" class="screen list" aria-labelledby="listTitle" hidden>
+    <h1 class="headline" id="listTitle" tabindex="-1"></h1>
+    <p class="lead" id="listBody"></p>
+    <div id="cards" class="cards"></div>
+    <div id="notices" class="notices"></div>
+  </section>
+</main>
+
+<footer class="foot" id="footer">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <span class="wordmark">unmeta</span>
+      <p class="muted">The free metadata remover that never sees your files. Works offline. No cookies, analytics or accounts.</p>
+    </div>
+    <nav class="foot-nav" aria-label="Footer">
+      <!--PAGE-LINKS-->
+    </nav>
+    <p class="foot-support muted">Free and ad-free. If it helped,
+      <a class="coffee-link" href="https://www.buymeacoffee.com/kabirsharma" target="_blank" rel="noopener noreferrer"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-coffee"/></svg>buy me a coffee<span class="vh"> (opens in a new tab)</span><svg class="ic ext" aria-hidden="true" focusable="false"><use href="#i-external"/></svg></a></p>
+  </div>
+</footer>
+
+<aside class="quick" id="quick" aria-label="Choose files" hidden><label class="btn primary btn-lg" for="pick"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-image-plus"/></svg>Choose files to clean</label></aside>
+
+<section id="dock" class="dock" aria-label="Actions" hidden>
+  <div class="dock-inner">
+    <div id="progress" class="progress" role="progressbar" aria-label="Cleaning progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i></i></div>
+    <button id="keepBtn" class="keep" type="button" aria-haspopup="dialog">
+      <span class="keep-icon"><svg class="ic" aria-hidden="true" focusable="false"><use id="keepIcon" href="#i-shield-check"/></svg></span>
+      <span class="keep-text"><span class="muted small">Keep</span><b class="strong" id="keepName">Nothing private</b></span>
+      <svg class="ic chev" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg>
+    </button>
+    <div class="dock-actions">
+      <button id="addBtn" class="btn secondary" type="button"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-image-plus"/></svg><span id="addLabel">Add photos</span></button>
+      <button id="mainBtn" class="btn primary" type="button"><svg class="ic" aria-hidden="true" focusable="false"><use id="mainIcon" href="#i-eraser"/></svg><span id="mainLabel">Clean photos</span></button>
+    </div>
+  </div>
+</section>
+
+<div id="dropOverlay" class="drop-overlay" hidden aria-hidden="true">
+  <div class="drop-overlay-card"><svg class="ic" focusable="false"><use href="#i-upload"/></svg><span class="title">Drop to add</span></div>
+</div>
+
+<div id="scrim" class="scrim" hidden></div>
+
+<div id="keepSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="keepTitle" aria-describedby="keepDesc" hidden>
+  <div class="sheet-head">
+    <h2 id="keepTitle" class="title">What should stay?</h2>
+    <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+  </div>
+  <p id="keepDesc" class="muted">Colours and rotation always stay, so photos look the same. Video and sound are never touched.</p>
+  <div id="choices" class="choices" role="radiogroup" aria-labelledby="keepTitle"></div>
+  <details class="more">
+    <summary><span class="strong">More options</span><svg class="ic chev" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></summary>
+    <div class="rows">
+      <button id="openFolder" class="row" type="button" hidden><span class="row-icon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-folder"/></svg></span><span class="row-text"><span class="strong">Clean a folder in place</span><span class="muted small">Save into the folder itself. Chrome and Edge only.</span></span><svg class="ic chev-r" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></button>
+      <div class="row"><span class="row-icon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-files"/></svg></span><span class="row-text"><label class="strong row-label" for="pickFolder">Add a whole folder</label><span class="muted small" id="folderHint">Includes the photos and videos in every folder inside it.</span></span><svg class="ic chev-r" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg><input id="pickFolder" type="file" webkitdirectory multiple aria-describedby="folderHint"></div>
+      <div class="row static"><span class="row-icon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-report"/></svg></span><span class="row-text"><span class="strong" id="reportLabel">Download a report</span><span class="muted small">A list of every detail found, for your records.</span></span>
+        <span class="pills" role="group" aria-labelledby="reportLabel"><button data-report="csv" type="button">CSV</button><button data-report="json" type="button">JSON</button></span></div>
+    </div>
+  </details>
+  <button class="btn primary wide" type="button" data-close>Done</button>
+</div>
+
+<div id="aboutSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" hidden>
+  <div class="sheet-head">
+    <h2 id="aboutTitle" class="title">What UnMeta can and can't do</h2>
+    <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+  </div>
+  <ul class="about">
+    <li><span class="tile c-lagoon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span><div><h3 class="strong">Never leaves your browser</h3><p class="muted">Photos and videos are read and cleaned inside this page and never uploaded. They're read only while the page is open and forgotten when you start over or close it.</p></div></li>
+    <li><span class="tile c-lagoon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg></span><div><h3 class="strong">You can check it yourself</h3><p class="muted">Turn off your Wi-Fi now and clean a photo: it still works. After your first visit it even opens offline. The browser also blocks this page from uploading anything.</p></div></li>
+    <li><span class="tile c-lagoon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-shield-check"/></svg></span><div><h3 class="strong">Removes hidden details</h3><p class="muted">Location, device and serial numbers, names, dates, AI labels and hidden copies stored inside the file.</p></div></li>
+    <li><span class="tile c-location"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-eye-off"/></svg></span><div><h3 class="strong">Can't change what's in the picture</h3><p class="muted">Faces, street signs, screens and reflections stay visible, and voices stay audible. So do invisible watermarks woven into the pixels or sound, like Google's SynthID.</p></div></li>
+    <li><span class="tile c-ai"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-sparkle-off"/></svg></span><div><h3 class="strong">Removing an AI label doesn't change how something was made</h3><p class="muted">Many platforms ask you to say when content was made with AI. Check their rules before you post.</p></div></li>
+    <li><span class="tile c-muted"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-files"/></svg></span><div><h3 class="strong">Your originals stay as they are</h3><p class="muted">You download clean copies. Originals change only if you choose to replace them when cleaning a folder.</p></div></li>
+  </ul>
+  <button class="btn secondary wide" type="button" data-close>Got it</button>
+</div>
+
+<div id="confirmSheet" class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody" hidden>
+  <div class="confirm-icon"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg></div>
+  <h2 id="confirmTitle" class="title"></h2>
+  <p id="confirmBody" class="muted"></p>
+  <div class="confirm-actions">
+    <button id="confirmNo" class="btn secondary" type="button"></button>
+    <button id="confirmYes" class="btn danger" type="button"></button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="announce" class="vh" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="announceUrgent" class="vh" role="alert" aria-atomic="true"></div>
+
+<noscript><p class="noscript">UnMeta needs JavaScript to read and clean photos and videos in your browser. Nothing is sent anywhere.</p></noscript>
+<script src="/static/app.js?v=10" defer></script>
+</body>
+</html>
