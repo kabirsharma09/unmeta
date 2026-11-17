@@ -576,6 +576,12 @@ def export(out_dir, public_url: str = "") -> list[str]:
         written.append("_headers")
         (out / "vercel.json").write_text(_json_mod.dumps(vercel_config(PUBLIC_URL), indent=2) + "\n")
         written.append("vercel.json")
+        if os.environ.get("VERCEL"):
+            # Built by Vercel from the repository: it reads the root vercel.json, so neither config file needs to be
+            # in the site (they hold nothing secret, but there's no reason to serve them).
+            for name in ("vercel.json", "_headers"):
+                (out / name).unlink()
+                written.remove(name)
         return written
     finally:
         PUBLIC_URL = old

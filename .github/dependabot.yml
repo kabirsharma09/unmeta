@@ -1,0 +1,12 @@
+# Weekly pull requests for outdated or vulnerable dependencies. Each one runs CI before you merge it.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: npm
+    directory: /engine
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
