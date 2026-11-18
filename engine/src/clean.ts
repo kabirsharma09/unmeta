@@ -3,9 +3,9 @@
 import { type Bytes, ascii, concat, equal, utf8Encode } from "./bytes.ts";
 import { blankC2paBoxes, heifItems, itemBytes, writeItem } from "./bmff.ts";
 import * as C from "./containers.ts";
-import { type Field, type Inventory, inspect } from "./inspect.ts";
+import { BLOCK_TAGS, type Field, type Inventory, inspect } from "./inspect.ts";
 import type { Category } from "./taxonomy.ts";
-import { type WriteEntry, readExif, shortEntry, writeExif } from "./tiff.ts";
+import { type Range, type WriteEntry, imageRanges, mergeRanges, overlaps, previewRanges, readExif, shortEntry, writeExif } from "./tiff.ts";
 import { buildXmp } from "./xmp.ts";
 
 export interface Options {
@@ -153,30 +153,83 @@ function tiffWritable(d: Bytes): boolean {
 function cleanTiff(src: Bytes, inv: Inventory, P: Payloads, errs: string[]): Bytes {
   const d = src.slice();
   const ex = readExif(tiffView(d));
-  const zero = (pos: number, len: number) => d.fill(0, pos, pos + len);
-  const ids = new Set(inv.fields.map(f => f.id));
+  // picture data of every directory (strips and tiles) plus every embedded JPEG preview: never written to
+  const pics = imageRanges(ex, d.length);
+  const previews = previewRanges(ex, d.length);
+  const guarded = mergeRanges([...pics, ...previews.map(p => p.range)]);
+  let overlapped = false;
+  const zero = (pos: number, len: number) => {
+    if (len <= 0) return;
+    if (overlaps(guarded, pos, pos + len)) { overlapped = true; return; }
+    d.fill(0, pos, pos + len);
+  };
+  const byId = new Map(inv.fields.map(f => [f.id, f]));
   const xmpLast = ex.ifd0.get(700);
-  // every copy of a tag, not only the last one: a repeated tag can hide a second value
-  for (const { ifd, entry: e } of ex.all) {
-    if (ifd === "interop") continue;
+  // every copy of a tag, in every directory, not only the last one: a repeated tag can hide a second value
+  for (const { ifd, kind, entry: e } of ex.all) {
     const id = `exif:${ifd}:${e.tag}`;
-    if (ifd === "0" && (e.tag === 700 || e.tag === 33723 || e.tag === 34377)) {   // blocks stored in TIFF tags
-      if (e === xmpLast && P.xmp) {
+    if (kind !== "gps" && BLOCK_TAGS.has(e.tag)) {   // blocks stored in TIFF tags
+      if (ifd === "0" && e === xmpLast && P.xmp && !overlaps(guarded, e.pos, e.pos + e.raw.length)) {
         const b = utf8Encode(P.xmp);
         if (b.length <= e.raw.length) { d.fill(0x20, e.pos, e.pos + e.raw.length); d.set(b, e.pos); continue; }
       }
       zero(e.pos, e.raw.length);
       continue;
     }
-    if (ifd === "exif" && e.tag === 0x927c) { zero(e.pos, e.raw.length); continue; }   // maker notes
-    if (!ids.has(id) || P.intended.has(id)) continue;
-    const f = inv.fields.find(x => x.id === id)!;
-    if (ifd === "0" && !f.keepable && f.category === "technical") continue; // structural
+    if (kind === "exif" && e.tag === 0x927c) { zero(e.pos, e.raw.length); continue; }   // maker notes
+    const f = byId.get(id);
+    if (!f || P.intended.has(id)) continue;
+    if (!f.keepable && f.category === "technical") continue; // structural
     zero(e.pos, e.raw.length);
   }
+  if (overlapped) errs.push("A private detail shares its bytes with the picture data, so it was left in place rather than change the picture.");
+  for (const { dir, range } of previews) cleanPreview(d, range, dir, pics, errs);
   if (!P.c2pa) blankC2paBoxes(d, C.C2PA_UUID);
   errs.push(...tiffLeftovers(d));
   return d;
+}
+
+/** Walk a JPEG's segments up to the first scan: [marker, payload start, payload end] for each. Null if malformed. */
+function jpegSegments(d: Bytes, s: number, e: number): { segs: [number, number, number][]; sos: number } | null {
+  if (e - s < 4 || d[s] !== 0xff || d[s + 1] !== 0xd8) return null;
+  const segs: [number, number, number][] = [];
+  let p = s + 2;
+  while (p + 2 <= e) {
+    if (d[p] !== 0xff) return null;
+    const m = d[p + 1];
+    if (m === 0xff) { p++; continue; }
+    if (m === 0xda) return { segs, sos: p };
+    if (m === 0xd9) return { segs, sos: -1 };
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { p += 2; continue; }
+    if (p + 4 > e) return null;
+    const len = (d[p + 2] << 8) | d[p + 3];
+    if (len < 2 || p + 2 + len > e) return null;
+    segs.push([m, p + 4, p + 2 + len]);
+    p += 2 + len;
+  }
+  return null;
+}
+
+/** Blank the metadata inside an embedded JPEG preview in place: APPn and COM payloads (except the ICC profile and the
+ *  Adobe colour-transform header) and anything after the end of the image. Tables, frame and scan bytes are untouched. */
+function cleanPreview(d: Bytes, [s, e]: Range, dir: string, pics: Range[], errs: string[]) {
+  const fail = (why: string) => errs.push(`The embedded preview (directory ${dir}) ${why}, so it may still hold hidden details.`);
+  if (!d.subarray(s, e).some(b => b !== 0)) return;
+  const j = jpegSegments(d, s, e);
+  if (!j) return fail("couldn't be read");
+  const meta = j.segs.filter(([m, ps, pe]) => ((m >= 0xe0 && m <= 0xef) || m === 0xfe)
+    && !(m === 0xe2 && C.segKind({ marker: m, payload: d.subarray(ps, Math.min(pe, ps + 12)) }) === "icc")
+    && !(m === 0xee && C.segKind({ marker: m, payload: d.subarray(ps, pe) }) === "adobe"));
+  const end = j.sos >= 0 ? Math.min(e, C.jpegScanEnd(d.subarray(0, e), j.sos)) : e;
+  const hidden = j.sos >= 0 ? C.splitScan(d.subarray(j.sos, end)).hidden.length > 0 : false;
+  const work: Range[] = meta.map(([, ps, pe]) => [ps, pe]);
+  // Adobe's segment is 12 bytes by the standard; anything after it isn't needed to show the picture
+  for (const [m, ps, pe] of j.segs) if (m === 0xee && pe - ps > 12 && C.segKind({ marker: m, payload: d.subarray(ps, pe) }) === "adobe") work.push([ps + 12, pe]);
+  if (end < e) work.push([end, e]);
+  // a preview that is also a directory's picture data (old-style JPEG-in-TIFF) can't be changed
+  if (work.some(([a, b]) => b > a && overlaps(pics, a, b) && d.subarray(a, b).some(x => x !== 0))) return fail("is part of the picture data");
+  for (const [a, b] of work) d.fill(0, a, b);
+  if (hidden) fail("has blocks hidden between its scans");
 }
 
 /** Re-read the cleaned TIFF and list what the reader couldn't vouch for: skipped entries, and repeated tags whose
@@ -267,11 +320,21 @@ export function samePixels(inv: Inventory, a: Bytes, b: Bytes): boolean {
     const pics = (x: Bytes) => concat(heifItems(x).filter(i => !["Exif", "mime", "uri "].includes(i.type)).map(i => itemBytes(x, i)));
     return equal(pics(a), pics(b));
   }
-  // TIFF/RAW: compare every image strip/tile
+  // TIFF/RAW: compare every strip and tile of every directory (IFD chain and SubIFDs), and every embedded preview's
+  // picture data (from its first scan to its end of image)
   const ex = inv.exif;
   if (!ex) return true;
-  const offs = ex.ifd0.get(273) ?? ex.ifd0.get(324), lens = ex.ifd0.get(279) ?? ex.ifd0.get(325);
-  if (!offs || !lens) return true;
-  const o = ([] as number[]).concat(offs.value as number), l = ([] as number[]).concat(lens.value as number);
-  return o.every((off, i) => equal(a.subarray(off, off + l[i]), b.subarray(off, off + l[i])));
+  for (const [s, e] of imageRanges(ex, a.length)) if (!equal(a.subarray(s, e), b.subarray(s, e))) return false;
+  for (const { range: [s, e] } of previewRanges(ex, a.length)) {
+    const ja = jpegSegments(a, s, e), jb = jpegSegments(b, s, e);
+    if (!ja || !jb) { if (!equal(a.subarray(s, e), b.subarray(s, e))) return false; continue; }
+    if (ja.sos !== jb.sos) return false;
+    if (ja.sos < 0) continue;
+    const end = Math.min(e, C.jpegScanEnd(a.subarray(0, e), ja.sos));
+    if (!equal(a.subarray(ja.sos, end), b.subarray(ja.sos, end))) return false;
+    // tables and frame headers are picture data too
+    const tables = (j: { segs: [number, number, number][] }, x: Bytes) => j.segs.filter(([m]) => !((m >= 0xe0 && m <= 0xef) || m === 0xfe)).map(([m, ps, pe]) => concat([new Uint8Array([m]), x.subarray(ps, pe)]));
+    if (!equal(concat(tables(ja, a)), concat(tables(jb, b)))) return false;
+  }
+  return true;
 }

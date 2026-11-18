@@ -16,25 +16,28 @@ const EXIF_DEVICE = set(`Make Model LensMake LensModel LensSpecification LensSer
   FocalLengthIn35mmFilm WhiteBalance ExposureMode SceneCaptureType DigitalZoomRatio Contrast Saturation Sharpness SensingMethod
   SceneType SubjectArea SubjectLocation CompositeImage GainControl SensitivityType RecommendedExposureIndex UniqueCameraModel
   CustomRendered FocalPlaneXResolution FocalPlaneYResolution FocalPlaneResolutionUnit MakerNote ExposureIndex
-  SubjectDistanceRange LocalizedCameraModel`);
+  SubjectDistanceRange LocalizedCameraModel SerialNumber Lens CameraLabel Exposure Shadows Brightness Smoothness MoireFilter`);
 const EXIF_PERSONAL = set(`Artist Copyright ImageDescription UserComment CameraOwnerName XPTitle XPComment XPAuthor XPKeywords
   XPSubject DateTime DateTimeOriginal DateTimeDigitized OffsetTime OffsetTimeOriginal OffsetTimeDigitized SubsecTime
-  SubsecTimeOriginal SubsecTimeDigitized ImageUniqueID DocumentName PageName Rating RatingPercent ImageNumber ImageHistory`);
+  SubsecTimeOriginal SubsecTimeDigitized ImageUniqueID DocumentName PageName Rating RatingPercent ImageNumber ImageHistory
+  OwnerName RawFile`);
 const EXIF_TECHNICAL = set(`Orientation XResolution YResolution ResolutionUnit ColorSpace YCbCrPositioning YCbCrSubSampling
   ExifVersion FlashPixVersion ComponentsConfiguration CompressedBitsPerPixel ExifImageWidth ExifImageHeight PixelXDimension
   PixelYDimension Gamma InteroperabilityIndex InteroperabilityVersion ImageWidth ImageLength BitsPerSample Compression
   PhotometricInterpretation SamplesPerPixel PlanarConfiguration WhitePoint PrimaryChromaticities YCbCrCoefficients
   ReferenceBlackWhite TransferFunction`);
-const EXIF_PROVENANCE = set("Software ProcessingSoftware");
-const HIGH_RISK = set("BodySerialNumber CameraSerialNumber LensSerialNumber CameraOwnerName ImageUniqueID MakerNote HostComputer");
+const EXIF_PROVENANCE = set("Software ProcessingSoftware Converter");
+const HIGH_RISK = set("BodySerialNumber CameraSerialNumber LensSerialNumber CameraOwnerName ImageUniqueID MakerNote HostComputer OwnerName SerialNumber");
 const LOW_RISK_DEVICE = set(`ExposureTime FNumber ExposureProgram ISOSpeedRatings PhotographicSensitivity ShutterSpeedValue
   ApertureValue BrightnessValue ExposureBiasValue MaxApertureValue MeteringMode LightSource Flash FocalLength
   FocalLengthIn35mmFilm WhiteBalance ExposureMode SceneCaptureType DigitalZoomRatio Contrast Saturation Sharpness SensingMethod
-  SceneType CustomRendered GainControl SensitivityType RecommendedExposureIndex SubjectDistanceRange ExposureIndex`);
+  SceneType CustomRendered GainControl SensitivityType RecommendedExposureIndex SubjectDistanceRange ExposureIndex Lens Exposure
+  Shadows Brightness Smoothness MoireFilter`);
 
 export const FRIENDLY: Record<string, string> = {
   Make: "Camera maker", Model: "Camera model", LensModel: "Lens", LensMake: "Lens maker",
-  BodySerialNumber: "Camera serial number", LensSerialNumber: "Lens serial number", CameraOwnerName: "Camera owner name",
+  BodySerialNumber: "Camera serial number", SerialNumber: "Camera serial number", OwnerName: "Camera owner name",
+  CameraLabel: "Camera label", RawFile: "Original raw file name", LensSerialNumber: "Lens serial number", CameraOwnerName: "Camera owner name",
   Artist: "Author", Copyright: "Copyright", DateTimeOriginal: "Date taken", DateTime: "Date modified",
   DateTimeDigitized: "Date digitised", OffsetTimeOriginal: "Time-zone offset", Software: "Software",
   ImageDescription: "Description", UserComment: "User comment", Orientation: "Orientation", HostComputer: "Computer / phone name",

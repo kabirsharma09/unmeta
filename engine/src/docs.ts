@@ -762,14 +762,17 @@ function pdfDate(s: string): string {
 interface PObj { n: number; at: number; v: PV; end: number; stream?: { start: number; len: number; exact: boolean }; inStm?: boolean }
 
 /** Every "N G obj" in file order, including objects from earlier saved versions. Stream data is skipped, not searched. */
-function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean; overruns: [number, number][]; badEnds: number } {
+function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean; overruns: [number, number][]; badEnds: number; hidden: number } {
   const out: PObj[] = [];
+  let hidden = 0;                           // streams trusted by their length whose data looks like it hides details
+  let intMap: Map<number, number> | null = null;
+  const ints = () => (intMap ??= intObjects(d));
   const overruns: [number, number][] = [];   // bytes a stream's stated length claims beyond where it really ends
   let badEnds = 0;                          // streams whose end marker isn't where their length says
   let pos = 0, failed = 0;
   const allowance = 2 * d.length + 16 * 1024 * 1024;   // bytes re-read by objects that turn out to be damaged
   while (pos < d.length) {
-    if (out.length >= MAX_OBJECTS || failed > allowance) return { objs: out, complete: false, overruns, badEnds };
+    if (out.length >= MAX_OBJECTS || failed > allowance) return { objs: out, complete: false, overruns, badEnds, hidden };
     const i = indexOf(d, "obj", pos);
     if (i < 0) break;
     pos = i + 3;
@@ -796,32 +799,45 @@ function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean; overruns: [nu
         let s = k + 6;
         if (d[s] === 13) s++;
         if (d[s] === 10) s++;
-        const L = get(v, "Length");
+        let L = get(v, "Length");
+        // an indirect length ("/Length 6 0 R", common) is read from the plain number object it points to
+        if (L?.t === "ref") { const r = ints().get(L.n); L = r !== undefined && Number.isFinite(r) ? { t: "num", s: L.s, e: L.e, v: r } : undefined; }
         let len = 0, exact = false;
         if (L?.t === "num" && Number.isInteger(L.v) && L.v >= 0 && s + L.v <= d.length) {
           len = L.v;
           const after = skipWs(d, s + L.v, d.length);
           exact = latin1(d, after, after + 9) === "endstream";
-          // an end marker inside the stated length: the length may be too long and swallow the objects after it
-          // (their details would then go unseen). Read on from the first end marker, and say the file is damaged.
-          const inner = indexOf(d, "endstream", s, s + L.v);
-          if (inner >= 0) {
-            let e = inner;
-            if (e > s && d[e - 1] === 10) e--;
-            if (e > s && d[e - 1] === 13) e--;
-            overruns.push([inner, s + L.v]);
-            len = e - s;
-            exact = true;
-            badEnds++;
-          } else if (!exact) badEnds++;   // a damaged end marker doesn't move the data, but the file isn't what it says
+          if (exact) {
+            // the stated length ends right at the end marker: trust it, even if the data itself mentions "endstream".
+            // Objects tucked inside such a stream are its content and are never read or changed; but if it looks like
+            // details are hiding there (a reader that ignores the length would find them), say so.
+            const inner = indexOf(d, "endstream", s, s + L.v);
+            if (inner >= 0 && DAMAGE_SIGNS.some(k => indexOf(d, k, inner, s + L.v) >= 0)) hidden++;
+          } else {
+            // an end marker inside the stated length: the length may be too long and swallow the objects after it
+            // (their details would then go unseen). Read on from the first end marker, and say the file is damaged.
+            const inner = indexOf(d, "endstream", s, s + L.v);
+            if (inner >= 0) {
+              let e = inner;
+              if (e > s && d[e - 1] === 10) e--;
+              if (e > s && d[e - 1] === 13) e--;
+              overruns.push([inner, s + L.v]);
+              len = e - s;
+              exact = true;
+            }
+            badEnds++;   // even a damaged end marker alone: the data doesn't move, but the file isn't what it says
+          }
         } else {
+          // a length that can't be worked out: where this stream really ends is unknown, so nothing after its start
+          // may be changed (it could all be the stream's content). Read on from the first end marker to list details.
+          badEnds++;
+          overruns.push([s, d.length]);
           const e = indexOf(d, "endstream", s, Math.min(d.length, s + 4 * WINDOW + 9));
           if (e >= 0) {
             len = e - s;
             if (len > 0 && d[s + len - 1] === 10) len--;
             if (len > 0 && d[s + len - 1] === 13) len--;
-            exact = true;
-          } else badEnds++;
+          }
         }
         obj.stream = { start: s, len, exact };
         pos = Math.max(pos, s + len);
@@ -830,7 +846,36 @@ function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean; overruns: [nu
     }
     out.push(obj);
   }
-  return { objs: out, complete: true, overruns, badEnds };
+  return { objs: out, complete: true, overruns, badEnds, hidden };
+}
+
+/** Every "N G obj <integer> endobj" in the file: the values indirect stream lengths point to. NaN when one number
+ *  has different values (e.g. a look-alike tucked inside some stream's data), so it is never guessed. */
+function intObjects(d: Bytes): Map<number, number> {
+  const out = new Map<number, number>();
+  let seen = 0;
+  for (let i = indexOf(d, "obj", 0); i >= 0 && seen < 4_000_000; i = indexOf(d, "obj", i + 3), seen++) {
+    if (i + 3 >= d.length || !WS[d[i + 3]]) continue;
+    let q = i - 1;
+    if (q < 0 || !WS[d[q]]) continue;
+    while (q >= 0 && WS[d[q]]) q--;
+    const ge = q + 1;
+    while (q >= 0 && isDigit(d[q])) q--;
+    if (ge - (q + 1) < 1 || ge - (q + 1) > 5 || q < 0 || !WS[d[q]]) continue;
+    while (q >= 0 && WS[d[q]]) q--;
+    const ne = q + 1;
+    while (q >= 0 && isDigit(d[q])) q--;
+    if (ne - (q + 1) < 1 || ne - (q + 1) > 10 || (q >= 0 && !WS[d[q]] && !DELIM[d[q]])) continue;
+    const vs = skipWs(d, i + 3, d.length), ve = readToken(d, vs, Math.min(d.length, vs + 16));
+    if (ve === vs || ve - vs > 12 || !/^\d+$/.test(latin1(d, vs, ve))) continue;
+    const k = skipWs(d, ve, d.length);
+    if (latin1(d, k, k + 6) !== "endobj") continue;
+    const n = +latin1(d, q + 1, ne), v = +latin1(d, vs, ve);
+    const was = out.get(n);
+    out.set(n, was === undefined || was === v ? v : NaN);
+  }
+  if (seen >= 4_000_000) out.clear();   // too many to tell apart: no indirect length is trusted
+  return out;
 }
 
 /** Decoded stream data when it is plain or Flate-only; null when the filters can't be undone here. */
@@ -884,6 +929,7 @@ const INFO: Record<string, [string, Category, Risk]> = {
   Company: ["Company", "personal", "high"], Manager: ["Manager", "personal", "high"], SourceModified: ["Source last modified", "personal", "medium"],
 };
 const INFO_SIGNS = ["Author", "Creator", "Producer", "CreationDate", "ModDate"];
+const STRUCTURAL = ["Pages", "Kids", "Parent", "Contents", "Root", "MediaBox", "Annots", "Resources", "Subtype"];
 const COMMENT_TYPES = new Set(["Text", "FreeText", "Highlight", "Underline", "StrikeOut", "Squiggly", "Ink", "Caret", "Stamp", "Line",
   "Square", "Circle", "Polygon", "PolyLine", "FileAttachment", "Sound", "Redact"]);
 const XMP_NS: Record<string, string> = { "http://ns.adobe.com/pdf/1.3/": "pdf", "http://ns.adobe.com/pdfx/1.3/": "pdfx",
@@ -892,7 +938,11 @@ const XMP_NS: Record<string, string> = { "http://ns.adobe.com/pdf/1.3/": "pdf", 
 async function inspectPdf(inv: DocInventory, src: Source) {
   const plan = inv.doc as PdfPlan;
   const d = await src.read(0, src.size);
-  const { objs, complete, overruns, badEnds } = scanObjects(d);
+  const { objs, complete, overruns, badEnds, hidden } = scanObjects(d);
+  if (hidden) {
+    inv.errors.push("Part of this PDF holds what looks like hidden details inside its content, which can't be checked.");
+    plan.blocked.set("pdf:hidden", "Part of this PDF holds what looks like hidden details inside its content, which were left as they are.");
+  }
   if (badEnds) {
     inv.errors.push("Part of this PDF is damaged: a section's stated length doesn't match where it ends.");
     plan.blocked.set("pdf:length", "Part of this PDF is damaged, and some details may still be inside it.");
@@ -948,11 +998,28 @@ async function inspectPdf(inv: DocInventory, src: Source) {
   for (const o of all) {
     if (o.v.t !== "dict" || o.stream) continue;
     const type = nameOf(get(o.v, "Type"));
+    // whatever a trailer names as /Info is the details block, whatever /Type it claims (readers show it regardless)
+    if (infoRefs.has(o.n)) {
+      // ...unless it is plainly a structural object (an older one reusing the number): blanking it would change the
+      // document, so if it also carries details, they can't be removed here
+      const structural = type && type !== "Info" && STRUCTURAL.some(k => get(o.v, k) !== undefined);
+      if (!structural) { infoDicts.push({ o, dict: o.v }); continue; }
+      if (INFO_SIGNS.some(k => get(o.v, k) !== undefined)) {
+        inv.errors.push("This PDF's details block is mixed into another part of the file and can't be removed safely.");
+        plan.blocked.set("pdf:info-mixed", "This PDF's details block is mixed into another part of the file, so it was left as it is.");
+      }
+      continue;
+    }
     if (type && type !== "Info") continue;
     const looks = INFO_SIGNS.some(k => get(o.v, k)?.t === "str") && !get(o.v, "Subtype") && !get(o.v, "Parent") && !get(o.v, "S");
-    if (infoRefs.has(o.n) || looks) infoDicts.push({ o, dict: o.v });
+    if (looks) infoDicts.push({ o, dict: o.v });
   }
-  for (const n of infoRefs) if (!all.some(o => o.n === n)) inv.errors.push("This PDF's details block couldn't be found.");
+  for (const n of infoRefs) {
+    const found = all.filter(o => o.n === n);
+    if (!found.length) inv.errors.push("This PDF's details block couldn't be found.");
+    else if (found.some(o => o.v.t !== "dict" || o.stream) && found.some(o => INFO_SIGNS.some(k => get(o.v, k) !== undefined)))
+      inv.errors.push("This PDF's details block is stored in a way that can't be read.");
+  }
 
   // newest first, so the main field shows the current value; older, different values become their own fields
   const seen = new Map<string, string>();   // key + value -> field id
@@ -960,7 +1027,7 @@ async function inspectPdf(inv: DocInventory, src: Source) {
   for (const { o, dict } of [...infoDicts].reverse()) {
     if (!o.inStm && o.at >= 0) plan.scan.push([o.at, o.end]);
     for (const en of dict.entries) {
-      if (en.key === "Trapped") continue;
+      if (en.key === "Trapped" || (en.key === "Type" && en.v.t === "name")) continue;
       let v = en.v, target: PObj | undefined;
       if (v.t === "ref") { target = latest.get(v.n); if (!target) continue; v = target.v; }
       const text = v.t === "str" ? pdfText(v.bytes) : v.t === "name" ? v.v : v.t === "num" ? String(v.v)
@@ -1161,23 +1228,42 @@ async function cleanOoxml(inv: DocInventory, src: Source, intended: Set<string>,
   if (plan.encrypted) return { parts: [{ from: 0, to: src.size }], content: true };
   const replace = new Map<string, Bytes>();
   const drop = new Set<string>();
+  // one part can carry several edits (e.g. workbook.xml: its path and its template link): every cut is made against the
+  // same original text, so they are gathered per part and applied together
+  const byPart = new Map<string, { xml: string; cuts: Cut[] }>();
   for (const part of plan.xml) {
-    const cuts = part.cuts.filter(c => !intended.has(c.id)).sort((a, b) => b.start - a.start);
+    const cuts = part.cuts.filter(c => !intended.has(c.id));
     if (!cuts.length) continue;
-    let xml = part.xml;
-    for (const c of cuts) xml = xml.slice(0, c.start) + xml.slice(c.end);
-    replace.set(part.path, xmlBytes(xml));
+    const g = byPart.get(part.path);
+    if (!g) byPart.set(part.path, { xml: part.xml, cuts: [...cuts] });
+    else if (g.xml === part.xml) g.cuts.push(...cuts);
+    else notes.push("Some details inside couldn't be removed.");   // never happens (both read from the same entry); verification catches what's left
+  }
+  for (const [path, g] of byPart) {
+    // merge overlapping cuts, then cut from the end so earlier offsets stay valid
+    const sorted = g.cuts.map(c => [c.start, c.end] as [number, number]).sort((a, b) => a[0] - b[0]);
+    const merged: [number, number][] = [];
+    for (const [s, e] of sorted) {
+      const last = merged[merged.length - 1];
+      if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+      else merged.push([s, e]);
+    }
+    let xml = g.xml;
+    for (let k = merged.length - 1; k >= 0; k--) xml = xml.slice(0, merged[k][0]) + xml.slice(merged[k][1]);
+    replace.set(path, xmlBytes(xml));
   }
   if (plan.thumbnails.length && !intended.has("ooxml:thumbnail")) {
     plan.thumbnails.forEach(t => drop.add(t));
     const isThumb = (target: string | null) => !!target && plan.thumbnails.includes(target.replace(/^\/+/, ""));
     if (plan.rels !== null) {
       const rels = plan.rels.replace(/<Relationship\b[^>]*?(?:\/>|>\s*<\/Relationship>)/g, m => (isThumb(attr(m.slice(13), "Target")) ? "" : m));
-      if (rels !== plan.rels) replace.set(plan.relsName ?? "_rels/.rels", xmlBytes(rels));
+      const rn = plan.relsName ?? "_rels/.rels";
+      if (rels !== plan.rels) { if (replace.has(rn)) notes.push("Some details inside couldn't be removed."); else replace.set(rn, xmlBytes(rels)); }
     }
     if (plan.types !== null) {
       const types = plan.types.replace(/<Override\b[^>]*?(?:\/>|>\s*<\/Override>)/g, m => (isThumb(attr(m.slice(9), "PartName")) ? "" : m));
-      if (types !== plan.types) replace.set(plan.typesName ?? "[Content_Types].xml", xmlBytes(types));
+      const tn = plan.typesName ?? "[Content_Types].xml";
+      if (types !== plan.types) { if (replace.has(tn)) notes.push("Some details inside couldn't be removed."); else replace.set(tn, xmlBytes(types)); }
     }
   }
   let content = true;

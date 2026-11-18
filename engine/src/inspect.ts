@@ -6,7 +6,7 @@ import {
   AI_PNG_KEYS, AI_SOURCE_TYPES, CATEGORIES, type Category, FRIENDLY, IPTC_NAMES, type Risk, classifyExif, classifyIptc,
   classifyXmp, isAiText, maxRisk,
 } from "./taxonomy.ts";
-import { type ExifData, type Entry, IFD_EXIF, IFD_GPS, IFD_INTEROP, gpsDecimal, readExif } from "./tiff.ts";
+import { type ExifData, type Entry, IFD_EXIF, IFD_GPS, IFD_INTEROP, gpsDecimal, previewRanges, readExif } from "./tiff.ts";
 import { type XmpProp, parseXmp } from "./xmp.ts";
 import { ITEM_TABLE_CONFLICT, heifItemTable, itemBytes } from "./bmff.ts";
 
@@ -31,9 +31,14 @@ export interface Report {
 }
 
 const POINTER_TAGS = new Set([IFD_EXIF, IFD_GPS, IFD_INTEROP, 0x014a, 0x0201, 0x0202, 700, 33723, 34377, 34675]);
-const STRUCTURAL = new Set([254, 255, 256, 257, 258, 259, 262, 263, 266, 273, 277, 278, 279, 280, 281, 284, 317, 320, 322, 323,
-  324, 325, 338, 339, 340, 341, 530, 531, 532, 50706, 50707]);
-
+/** Tags a decoder needs to draw the picture (TIFF baseline/extension, JPEG-in-TIFF, TIFF/EP raw layout). */
+const STRUCTURAL = new Set([254, 255, 256, 257, 258, 259, 262, 263, 266, 273, 277, 278, 279, 280, 281, 284, 290, 291, 292, 293,
+  317, 320, 322, 323, 324, 325, 332, 334, 336, 338, 339, 340, 341, 342, 347, 512, 515, 517, 518, 519, 520, 521, 530, 531, 532,
+  32997, 32998, 33421, 33422, 37399, 50706, 50707]);
+/** Blocks stored in TIFF tags (XMP, IPTC, Photoshop resources): read and removed as a whole. */
+export const BLOCK_TAGS = new Set([700, 33723, 34377]);
+/** Interop IFD tags the Exif standard defines; anything else there is out of place. */
+const INTEROP_STD = new Set([1, 2, 0x1000, 0x1001, 0x1002]);
 const trim = (s: string, n = 400) => { s = s.replace(/\0/g, ""); return s.length <= n ? s : `${s.slice(0, n)}… (+${s.length - n} chars)`; };
 export const F = (id: string, category: Category, source: string, name: string, label: string, value: string, risk: Risk,
   keepable = true, note = "", informational = false): Field =>
@@ -73,49 +78,94 @@ export function exifText(name: string, e: Entry): string {
 const blank = (e: Entry) => e.raw.every(b => b === 0);
 // RAW developers need these to decode colours, so they are never blanked in RAW files.
 const RAW_REQUIRED = new Set([271, 272, 50708]);
-/** DNG tags that are private rather than needed for development: camera serial, original file name, vendor data, raw ID. */
+/** DNG tags that are private rather than needed for development: camera serial, original file name, vendor data, raw ID,
+ *  display-only camera name and label, and when/what made the preview. */
 const DNG_PRIVATE: Record<number, [Category, Risk]> = { 50735: ["device", "high"], 50827: ["personal", "medium"],
-  50828: ["personal", "medium"], 50740: ["device", "medium"], 50781: ["device", "low"] };
+  50828: ["personal", "medium"], 50740: ["device", "medium"], 50781: ["device", "low"], 50709: ["device", "medium"],
+  51081: ["device", "medium"], 50971: ["personal", "medium"], 50966: ["ai", "medium"], 50967: ["ai", "medium"] };
+const tagName = (tag: number) => EXIF_TAGS[tag] ?? `Tag0x${tag.toString(16).toUpperCase().padStart(4, "0")}`;
+
+/** How a tag in a main directory (IFD0, IFD1…, SubIFD) is treated. Structural tags are needed to draw the picture and
+ *  are never changed. DNG tags (50706–52599) are needed to develop the raw, except the private ones listed above; the
+ *  Photoshop/Camera Raw private tags above that (0xFDE8 OwnerName, 0xFDE9 SerialNumber…) are classified like any other. */
+export function mainTag(fmt: string, tag: number, name: string, text: string): { structural: boolean; cat: Category; risk: Risk } {
+  const dngPrivate = DNG_PRIVATE[tag];
+  if (dngPrivate) return { structural: false, cat: dngPrivate[0], risk: dngPrivate[1] };
+  if (STRUCTURAL.has(tag) || (tag >= 50706 && tag < 52600) || (fmt === "raw" && RAW_REQUIRED.has(tag)))
+    return { structural: true, cat: "technical", risk: "none" };
+  const [cat, risk] = classifyExif(name, text);
+  return { structural: false, cat, risk };
+}
 
 function readExifInto(inv: Inventory, ex: ExifData, source = "EXIF") {
   inv.exif = ex;
-  for (const [tag, e] of ex.ifd0) {
-    if (POINTER_TAGS.has(tag) || blank(e)) continue;
-    const name = EXIF_TAGS[tag] ?? `Tag0x${tag.toString(16).toUpperCase().padStart(4, "0")}`;
-    const text = exifText(name, e);
-    if (tag === 274 && typeof e.value === "number") inv.orientation = e.value;
-    // DNG tags (50700+) are needed to develop the raw, except these, which identify the camera or the person
-    const dngPrivate = DNG_PRIVATE[tag];
-    const structural = !dngPrivate && (STRUCTURAL.has(tag) || tag >= 50700 || (inv.fmt === "raw" && RAW_REQUIRED.has(tag)));
-    const [cat, risk] = dngPrivate ? [dngPrivate[0], dngPrivate[1]] as [Category, Risk] : classifyExif(name, text);
-    inv.fields.push(F(`exif:0:${tag}`, structural ? "technical" : cat, source, name, FRIENDLY[name] ?? name, text,
-      structural ? "none" : risk, !structural && tag !== 50740));
-  }
-  for (const [tag, e] of ex.exif) {
-    if (tag === IFD_INTEROP || blank(e)) continue;
-    const name = EXIF_TAGS[tag] ?? `Tag0x${tag.toString(16).toUpperCase().padStart(4, "0")}`;
-    const text = exifText(name, e);
-    const [cat, risk] = classifyExif(name, text);
-    const mk = tag === 0x927c;
-    inv.fields.push(F(`exif:exif:${tag}`, cat, source, name, FRIENDLY[name] ?? name, text, risk, !mk,
-      mk ? "Vendor-private block; may hide serial numbers or location. Always removed." : ""));
-  }
-  if ([...ex.gps.values()].some(e => !blank(e))) {
-    inv.gps = gpsDecimal(ex.gps);
-    for (const [tag, e] of ex.gps) {
-      if (blank(e)) continue;
-      const name = GPS_TAGS[tag] ?? `GPS0x${tag.toString(16)}`;
-      inv.fields.push(F(`exif:gps:${tag}`, "location", source, name, FRIENDLY[name] ?? name, exifText(name, e),
-        name === "GPSVersionID" ? "low" : "high"));
+  for (const dir of ex.dirs) {
+    const { name: ifd, kind, entries } = dir;
+    if (kind === "gps") {
+      if (ifd === "gps" && [...entries.values()].some(e => !blank(e))) inv.gps = gpsDecimal(entries);
+      for (const [tag, e] of entries) {
+        if (blank(e)) continue;
+        const name = GPS_TAGS[tag] ?? `GPS0x${tag.toString(16)}`;
+        inv.fields.push(F(`exif:${ifd}:${tag}`, "location", source, name, FRIENDLY[name] ?? name, exifText(name, e),
+          name === "GPSVersionID" ? "low" : "high"));
+      }
+      continue;
     }
-  }
-  for (const [tag, e] of ex.interop) {
-    if (blank(e)) continue;
-    const name = tag === 1 ? "InteroperabilityIndex" : tag === 2 ? "InteroperabilityVersion" : `Interop0x${tag.toString(16)}`;
-    inv.fields.push(F(`exif:interop:${tag}`, "technical", source, name, name, exifText(name, e), "none"));
+    for (const [tag, e] of entries) {
+      if (blank(e) || (POINTER_TAGS.has(tag) && !BLOCK_TAGS.has(tag) && tag !== 34675)) continue;
+      // blocks (XMP, IPTC, Photoshop) in IFD0 are read on their own; anywhere else they're always removed
+      if (BLOCK_TAGS.has(tag) || tag === 34675) {
+        if (ifd === "0" || tag === 34675) continue;
+        inv.fields.push(F(`exif:${ifd}:${tag}`, "other", source, tagName(tag), "Metadata block in a secondary directory",
+          `${e.raw.length.toLocaleString("en-US")} bytes`, "medium", false));
+        continue;
+      }
+      if (kind === "interop") {
+        const name = tag === 1 ? "InteroperabilityIndex" : tag === 2 ? "InteroperabilityVersion" : tagName(tag);
+        // only the standard Interop tags are technical; anything else hidden there is classified, never trusted
+        const [cat, risk] = INTEROP_STD.has(tag) ? ["technical", "none"] as [Category, Risk] : classifyExif(name, exifText(name, e));
+        const [c, r] = !INTEROP_STD.has(tag) && cat === "technical" ? ["other", "low"] as [Category, Risk] : [cat, risk];
+        inv.fields.push(F(`exif:${ifd}:${tag}`, c, source, name, FRIENDLY[name] ?? name, exifText(name, e), r));
+        continue;
+      }
+      const name = tagName(tag);
+      const text = exifText(name, e);
+      if (kind === "exif") {
+        const [cat, risk] = classifyExif(name, text);
+        const mk = tag === 0x927c;
+        inv.fields.push(F(`exif:${ifd}:${tag}`, cat, source, name, FRIENDLY[name] ?? name, text, risk, !mk,
+          mk ? "Vendor-private block; may hide serial numbers or location. Always removed." : ""));
+        continue;
+      }
+      // main directories: IFD0, the rest of the IFD chain and SubIFDs
+      if (ifd === "0" && tag === 274 && typeof e.value === "number") inv.orientation = e.value;
+      const { structural, cat, risk } = mainTag(inv.fmt, tag, name, text);
+      // later directories (thumbnails, pages, raw data) only list what is private; their picture tags are never touched
+      if (ifd !== "0" && (structural || cat === "technical")) continue;
+      inv.fields.push(F(`exif:${ifd}:${tag}`, cat, source, name, FRIENDLY[name] ?? name, text, risk, !structural && tag !== 50740));
+    }
   }
   if (ex.hasIfd1) inv.fields.push(F("exif:thumbnail", "personal", source, "ThumbnailImage", "Embedded thumbnail",
     "IFD1 preview image", "medium", false, "A thumbnail can show the original, un-cropped or un-edited picture."));
+}
+
+/** JPEG previews inside a TIFF/RAW (JPEGInterchangeFormat): list what each one carries, under its own ids. */
+function readPreviewsInto(inv: Inventory, d: Bytes, ex: ExifData) {
+  for (const { dir, range: [s, e] } of previewRanges(ex, d.length)) {
+    const sub = d.subarray(s, e);
+    if (!sub.some(b => b !== 0)) continue;
+    if (!(sub[0] === 0xff && sub[1] === 0xd8)) {
+      inv.errors.push(`An embedded preview (directory ${dir}) isn't a JPEG the cleaner can read, so it may still hold hidden details.`);
+      continue;
+    }
+    const p = inspect(sub, "preview.jpg");
+    for (const err of p.errors) inv.errors.push(`Embedded preview (directory ${dir}): ${err}`);
+    for (const f of p.fields) {
+      if (f.category === "technical") continue;
+      inv.fields.push({ ...f, id: `preview:${dir}:${f.id}`, source: `Preview ${f.source}`, keepable: false,
+        note: "Inside the embedded preview picture. Always removed." });
+    }
+  }
 }
 
 export function readXmpInto(inv: Inventory, packet: string) {
@@ -328,6 +378,7 @@ function inspectGeneric(inv: Inventory, d: Bytes) {
     try {
       const ex = readExif(tiff);
       readExifInto(inv, ex, inv.fmt === "tiff" ? "TIFF" : "RAW/EXIF");
+      readPreviewsInto(inv, tiff, ex);
       inv.width = Number(ex.ifd0.get(256)?.value ?? 0); inv.height = Number(ex.ifd0.get(257)?.value ?? 0);
       const xmp = ex.ifd0.get(700)?.raw;
       if (xmp && xmp.some(b => b !== 0 && b !== 32)) readXmpInto(inv, utf8Decode(xmp));

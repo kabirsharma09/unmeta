@@ -277,6 +277,7 @@ function mp4Walk(inv: MediaInventory, r: number, d: Bytes, start: number, end: n
   if (depth > 12) { inv.errors.push("This video's structure is nested too deeply to check."); return; }
   for (const b of kids(d, start, end)) {
     if (b.type === "trak") mp4TimedTrack(inv, d, b);
+    if (b.type === "cmov") { inv.errors.push(CMOV_ERROR); continue; }
     if (MP4_CONTAINERS.has(b.type)) mp4Walk(inv, r, d, b.body, b.end, b.type === "trak" ? "track" : b.type === "moof" ? "fragment" : scope, video, depth + 1);
     else if (b.type === "udta") mp4Udta(inv, r, d, b, scope);
     else if (b.type === "meta") mp4Meta(inv, r, d, b, `${scope}.meta`);
@@ -297,12 +298,15 @@ const PLAIN_MEBX_KEYS = new Set(["com.apple.quicktime.still-image-time", "com.ap
  * file's sample tables, so they are reported as findings that can't be removed (and the file is never called clean).
  */
 function mp4TimedTrack(inv: MediaInventory, d: Bytes, trak: Box) {
-  const mdia = child(d, trak, "mdia"), hdlr = child(d, mdia, "hdlr");
-  const handler = hdlr ? latin1(d, hdlr.body + 8, hdlr.body + 12) : "";
-  const stsd = child(d, child(d, child(d, mdia, "minf"), "stbl"), "stsd");
+  const mdia = child(d, trak, "mdia"), minf = child(d, mdia, "minf");
+  // every handler, not just the first: a 'vide' handler followed by a 'meta' one must not hide a metadata track
+  const handlers = (b: Box | undefined) => b ? [...kids(d, b.body, b.end)].filter(c => c.type === "hdlr").map(h => latin1(d, h.body + 8, h.body + 12)) : [];
+  const mdiaHandlers = handlers(mdia), all = [...mdiaHandlers, ...handlers(minf)];
+  const handler = mdiaHandlers.join("/");
+  const stsd = child(d, child(d, minf, "stbl"), "stsd");
   const entries = stsd ? [...kids(d, stsd.body + 8, stsd.end)] : [];
   const types = entries.map(e => e.type);
-  const timed = handler === "meta" || types.some(t => /^(gpmd|camm|rtmd|mebx|mett|metx|urim)$/.test(t));
+  const timed = mdiaHandlers.length > 1 || all.includes("meta") || types.some(t => /^(gpmd|camm|rtmd|mebx|mett|metx|urim)$/.test(t));
   if (!timed) return;
   const keys: string[] = [];
   for (const e of entries) {
@@ -328,9 +332,16 @@ function mp4TimedTrack(inv: MediaInventory, d: Bytes, trak: Box) {
 const handledBoxes = new WeakMap<Bytes, Set<number>>();
 const markHandled = (d: Bytes, b: Box) => { let s = handledBoxes.get(d); if (!s) handledBoxes.set(d, s = new Set()); s.add(b.start); };
 
+const CMOV_ERROR = "This video's details are compressed in a way UnMeta can't check.";
+
 /** Backstop: a 'udta' or 'meta' box header in a place the walk doesn't reach (inside a sample entry, say). */
 function mp4StrayBoxes(inv: MediaInventory, d: Bytes) {
   const seen = handledBoxes.get(d);
+  // a compressed movie header ('cmov', zlib) anywhere: its contents can't be checked
+  for (let p = indexOf(d, "cmov", 4); p >= 0; p = indexOf(d, "cmov", p + 1)) {
+    const size = u32be(d, p - 4);
+    if (size >= 8 && p - 4 + size <= d.length) { if (!inv.errors.includes(CMOV_ERROR)) inv.errors.push(CMOV_ERROR); break; }
+  }
   for (const t of ["udta", "meta"]) {
     for (let p = indexOf(d, t, 4); p >= 0; p = indexOf(d, t, p + 1)) {
       const s = p - 4, size = u32be(d, s);
@@ -355,7 +366,12 @@ function mp4Uuid(inv: MediaInventory, r: number, d: Bytes, b: Box) {
   }
 }
 
-const MAX_META = 256 * 1024 * 1024;
+// Memory budget for metadata boxes read into memory: no single box over MAX_META, and no more than MAX_KEPT held for
+// the clean (a box with nothing to change is let go after it is checked). Each held byte is copied once more by the
+// clean and read once more by the re-check, so peak memory stays a small multiple of these.
+const MAX_META = 64 * 1024 * 1024;
+const MAX_MOOV = 256 * 1024 * 1024;   // the main header of a long video (sample tables) can legitimately be large
+const MAX_KEPT = 384 * 1024 * 1024;
 
 /** How many changes the plan holds; used to tell whether a region turned out to need any. */
 const planRefs = (inv: MediaInventory) =>
@@ -363,7 +379,7 @@ const planRefs = (inv: MediaInventory) =>
 
 async function inspectMp4(inv: MediaInventory, src: Source) {
   const video = { yes: false };
-  let metaBytes = 0;
+  let kept = 0;
   for (let pos = 0; pos + 8 <= src.size;) {
     const h = await src.read(pos, 16);
     let size = u32be(h, 0), hdr = 8;
@@ -376,8 +392,13 @@ async function inspectMp4(inv: MediaInventory, src: Source) {
       break;
     }
     if (["moov", "moof", "uuid", "udta", "meta"].includes(type)) {
-      if (size > MAX_META) throw new Error("The details block in this video is unusually large.");
-      if (type === "moof" && (metaBytes += size) > MAX_META) throw new Error("This video's fragment headers are unusually large.");
+      // too big to check: record it and move on without reading it into memory
+      if (size > (type === "moov" ? MAX_MOOV : MAX_META) || kept + size > MAX_KEPT) {
+        const msg = "A details block in this video is too large to check.";
+        if (!inv.errors.includes(msg)) inv.errors.push(msg);
+        pos += size;
+        continue;
+      }
       const refs = planRefs(inv);
       const r = inv.media.regions.push({ start: pos, data: (await src.read(pos, size)).slice() }) - 1;
       const d = inv.media.regions[r].data;
@@ -386,8 +407,9 @@ async function inspectMp4(inv: MediaInventory, src: Source) {
       else if (type === "udta") mp4Udta(inv, r, d, { type, start: 0, hdr, body: hdr, end: size }, "file");
       else mp4Meta(inv, r, d, { type, start: 0, hdr, body: hdr, end: size }, "file.meta");
       mp4StrayBoxes(inv, d);
-      // a fragment header with nothing to change is copied from the original instead of held in memory
-      if (type === "moof" && planRefs(inv) === refs) inv.media.regions.pop();
+      // a box with nothing to change is copied from the original instead of held in memory
+      if (planRefs(inv) === refs) inv.media.regions.pop();
+      else kept += size;
     }
     pos += size;
   }
