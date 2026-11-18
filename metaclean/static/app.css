@@ -928,3 +928,21 @@ body[data-screen="list"] .menu.langs { display: none !important; }
   .tray .drop-text { font-size: 12px; letter-spacing: -0.005em; }
   .hero-copy .lead { font-size: 15px; line-height: 1.5; }
 }
+
+/* ------------------------------------------------------------ first screen v3 */
+/* "Removes": quiet outlined chips with the red pencil icon. Yellow means "exposed" on this site, so it stays off them,
+   and the black "Choose files" button keeps the attention. */
+.removes a { background: transparent; color: var(--ink); border: 1px solid var(--rule-strong); font-weight: 500; }
+.removes a .ic { color: var(--pencil); }
+.removes a:hover { background: var(--hover); border-color: var(--ink); text-decoration: none; }
+/* "Works with": information, not buttons. No boxes, just icon and name. */
+.kinds li { background: transparent; border: 0; padding: 4px 0; }
+.kinds .ic { color: var(--ink-2); }
+/* the dashed border turns solid on hover only where there is a mouse; on touch it would stick after a tap */
+@media (hover: none) { .tray:hover { border-style: dashed; } }
+@media (max-width: 640px) {
+  .kinds { padding-top: 2px; border-top: 1px solid var(--rule); }
+  .kinds li { padding: 10px 0 2px; }
+  .kinds b { color: var(--ink-2); }
+  .removes a { min-height: 30px; padding: 3px 9px 3px 7px; }
+}
