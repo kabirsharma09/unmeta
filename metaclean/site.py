@@ -299,7 +299,7 @@ def _swap_text(h: str, en: str, tr: str) -> str:
     e = re.escape(_html.escape(en, quote=False))
     h = re.sub(rf">(\s*){e}(\s*)<", lambda m: f">{m.group(1)}{_html.escape(tr, quote=False)}{m.group(2)}<", h)
     a = _html.escape(en, quote=True)
-    for attr in ("aria-label", "data-h"):
+    for attr in ("aria-label", "data-h", "data-play", "data-pause"):
         h = h.replace(f'{attr}="{a}"', f'{attr}="{_html.escape(tr, quote=True)}"')
     return h
 

@@ -9,6 +9,12 @@ PROMISE = ("UnMeta आपके ब्राउज़र के अंदर ह
            "और फ़ोटो या आवाज़ को कभी दोबारा एन्कोड नहीं किया जाता।")
 
 UI = {
+    "Questions people ask": "अक्सर पूछे जाने वाले सवाल",
+    "How to do it": "कैसे करें",
+    "Related": "संबंधित",
+    "Sources": "स्रोत",
+    "Remove metadata from": "इनसे मेटाडेटा हटाएँ",
+    "Play": "चलाएँ",
     "Source code": "सोर्स कोड",
     "(opens in a new tab)": "(नए टैब में खुलता है)",
     "0 bytes": "0 बाइट",

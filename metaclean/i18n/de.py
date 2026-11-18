@@ -9,6 +9,12 @@ PROMISE = ("UnMeta arbeitet in deinem Browser: Die Datei wird nie hochgeladen, d
            "und Bild oder Ton werden nie neu kodiert.")
 
 UI = {
+    "Questions people ask": "Häufige Fragen",
+    "How to do it": "So geht’s",
+    "Related": "Verwandte Themen",
+    "Sources": "Quellen",
+    "Remove metadata from": "Metadaten entfernen aus",
+    "Play": "Abspielen",
     "Source code": "Quellcode",
     "(opens in a new tab)": "(öffnet in neuem Tab)",
     "0 bytes": "0 Bytes",
@@ -76,7 +82,7 @@ UI = {
     "JPG, HEIC, RAW": "JPG, HEIC, RAW",
     "Just check a photo": "Foto nur prüfen",
     "Keep": "Behalten",
-    "Limits": "Limits",
+    "Limits": "Grenzen",
     "Location": "Standort",
     "Location (GPS)": "Standort (GPS)",
     "Location, device and serial numbers, names, dates, AI labels and hidden copies stored inside the file.":

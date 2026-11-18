@@ -9,6 +9,12 @@ PROMISE = ("UnMeta fonctionne dans votre navigateur : le fichier n’est jamais 
            "quoi que ce soit, et l’image ou le son lui-même n’est jamais réencodé.")
 
 UI = {
+    "Questions people ask": "Questions fréquentes",
+    "How to do it": "Comment faire",
+    "Related": "À lire aussi",
+    "Sources": "Sources",
+    "Remove metadata from": "Supprimer les métadonnées de",
+    "Play": "Lecture",
     "Source code": "Code source",
     "(opens in a new tab)": "(s’ouvre dans un nouvel onglet)",
     "0 bytes": "0 octet",

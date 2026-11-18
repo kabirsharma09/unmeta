@@ -9,6 +9,12 @@ PROMISE = ("UnMeta funciona dentro de tu navegador: el archivo nunca se sube, la
            "y la imagen o el sonido nunca se vuelven a codificar.")
 
 UI = {
+    "Questions people ask": "Preguntas frecuentes",
+    "How to do it": "Cómo hacerlo",
+    "Related": "Relacionado",
+    "Sources": "Fuentes",
+    "Remove metadata from": "Eliminar metadatos de",
+    "Play": "Reproducir",
     "Source code": "Código fuente",
     "(opens in a new tab)": "(se abre en una pestaña nueva)",
     "0 bytes": "0 bytes",

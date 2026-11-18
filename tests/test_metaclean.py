@@ -943,3 +943,30 @@ def test_every_page_meets_bing_and_google_snippet_limits():
         assert len(title) <= 60, (path, len(title), title)
         assert 25 <= len(desc) <= 160, (path, len(desc))
         assert html.count("<h1") == 1, (path, html.count("<h1"))
+
+
+def test_translated_pages_have_no_english_left():
+    """Every bit of interface text on a translated page is in that language (names, formats and demo data excepted)."""
+    import html as _h
+    import re as _re
+    from metaclean.server import create_app
+    from metaclean.pages import PAGES
+    from metaclean.i18n import TRANSLATED
+    c = create_app().test_client()
+
+    def texts(h):
+        body = _re.sub(r"<script.*?</script>|<svg.*?</svg>", "", h.split("</head>", 1)[1], flags=_re.S)
+        out = {" ".join(t.split()) for t in _re.findall(r">([^<>]+)<", body)}
+        out |= set(_re.findall(r'(?:aria-label|data-play|data-pause)="([^"]+)"', body))
+        return {_h.unescape(t) for t in out if t.strip()}
+    english = set()
+    for p in ["/"] + [f"/{x['slug']}/" for x in PAGES]:
+        english |= texts(c.get(p).get_data(as_text=True))
+    # the same in English and the language, proper names, or made-up demo data
+    allowed = {"English", "Deutsch", "Español", "Français", "Português", "Content Credentials", "C2PA Content Credentials",
+               "IPTC Digital Source Type", "Jane Doe · 1 Mar 2026", "SAFETY FILM", "UnMeta", "unmeta", "Audio", "Videos",
+               "Photos", "Documents", "Menu", "Pause", "Site", "Actions", "Question", "Formats", "Sources", "Limites"}
+    for slug in TRANSLATED:
+        left = [t for t in texts(c.get(f"/{slug}/").get_data(as_text=True)) & english
+                if t not in allowed and (_re.search(r"[A-Za-z]{3,} [a-z]{2,}", t) or _re.fullmatch(r"[A-Z][a-z]{3,}", t))]
+        assert not left, (slug, left)

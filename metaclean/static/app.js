@@ -645,7 +645,7 @@ function landing() {
   document.addEventListener("visibilitychange", apply);
   toggle.onclick = () => {
     userPaused = !userPaused;
-    $("#demoToggleText").textContent = userPaused ? "Play" : "Pause";
+    $("#demoToggleText").textContent = userPaused ? toggle.dataset.play : toggle.dataset.pause;   // words come from the page, so they're translated
     $("#demoToggleIcon").setAttribute("href", userPaused ? "#i-play" : "#i-pause");
     apply();
   };
