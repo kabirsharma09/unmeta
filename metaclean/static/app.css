@@ -676,11 +676,11 @@ body[data-screen="list"] .menu { display: none !important; }
 .task-grid a:hover { background: var(--paper-2); border-color: var(--ink); transform: translateY(-2px); box-shadow: var(--shadow-print); }
 .task-grid .tile { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 10px; border-radius: var(--radius-2); }
 .task-grid .tile .ic { grid-row: auto; width: 22px; height: 22px; margin: 0; color: currentColor; }
-.tile.c-ink { background: var(--ink); color: var(--highlight); }
-.tile.c-location { background: var(--pencil); color: #fff; }
-.tile.c-ai { background: var(--highlight); color: var(--on-highlight); }
-.tile.c-doc { background: var(--film); color: var(--film-edge); }
-.tile.c-lagoon { background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); }
+.task-grid .tile.c-ink { background: var(--ink); color: var(--highlight); }
+.task-grid .tile.c-location { background: var(--pencil); color: #fff; }
+.task-grid .tile.c-ai { background: var(--highlight); color: var(--on-highlight); }
+.task-grid .tile.c-doc { background: var(--film); color: var(--film-edge); }
+.task-grid .tile.c-lagoon { background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); }
 .task-grid .t { font: 700 21px/24px var(--font-display); }
 .task-grid .muted { font-size: 13.5px; line-height: 19px; }
 .task-grid .go { position: absolute; right: 14px; top: 20px; width: 18px; height: 18px; color: var(--ink-3); transition: transform var(--dur-base) var(--ease-out); }
@@ -894,3 +894,12 @@ body[data-screen="list"] .menu.langs { display: none !important; }
 .source-list { display: grid; gap: 8px; }
 .source-list a { color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 4px; }
 .source-list a:hover { color: var(--ink); text-decoration-color: var(--ink); }
+
+/* language panel: drops down from its own button (the site menu is pinned to the screen edge, this one isn't) */
+.langs .lang-panel { position: absolute; top: calc(100% + 10px); right: 0; left: auto; width: 220px; padding: 12px 14px 8px; gap: 2px; }
+.lang-panel ul { margin-bottom: 0; }
+.lang-panel a { min-height: 42px; font-size: 15.5px; }
+.lang-panel .label { margin-bottom: 2px; }
+/* dialogs open with focus on their title, so no focus ring appears until you use the keyboard */
+.sheet .title:focus { outline: none; }
+.langs[open] > summary { text-decoration: none; }

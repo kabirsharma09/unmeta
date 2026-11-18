@@ -550,7 +550,10 @@ function openSheet(id, onClose) {
   document.body.style.overflow = "hidden";
   ["#top", "#main", "#footer", "#dock"].forEach(s => ($(s).inert = true));
   sheetStack.slice(0, -1).forEach(x => (x.el.inert = true));
-  (el.querySelector("[aria-checked=true]") || el.querySelector("button, [href], summary"))?.focus();
+  // focus the selected choice, else the dialog's title (screen readers start there; Tab reaches the buttons)
+  const title = el.querySelector(".title");
+  if (title) title.tabIndex = -1;
+  (el.querySelector("[aria-checked=true]") || title || el.querySelector("button, [href], summary"))?.focus();
 }
 function closeSheet() {
   const top = sheetStack.pop();
