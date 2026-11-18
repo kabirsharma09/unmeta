@@ -903,3 +903,28 @@ body[data-screen="list"] .menu.langs { display: none !important; }
 /* dialogs open with focus on their title, so no focus ring appears until you use the keyboard */
 .sheet .title:focus { outline: none; }
 .langs[open] > summary { text-decoration: none; }
+
+/* phones: a lighter first screen. The same facts, fewer words: file types as icons, one line of promises. */
+@media (max-width: 640px) {
+  .hero-copy { gap: 12px; }
+  .tray { gap: 12px; padding: 20px 14px 14px; }
+  .tray .drop-text > :first-child { display: none; }          /* nobody drags files on a phone */
+  .tray .drop-text { font-size: 13px; text-align: center; }
+  .can > .label { display: none; }                              /* the icons say it */
+  .kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kinds li { flex-direction: column; justify-content: center; gap: 4px; padding: 10px 4px; text-align: center; }
+  .kinds .ic { width: 22px; height: 22px; }
+  .kinds b { font-size: 12.5px; font-weight: 500; }
+  .kinds small { display: none; }
+  .removes ul { gap: 6px; }
+  .removes a { font-size: 12.5px; min-height: 28px; padding: 2px 8px 2px 6px; }
+  .removes a .ic { width: 14px; height: 14px; }
+  .removes > .label { display: block; }
+  .trust { gap: 6px 14px; }
+  .trust li:nth-child(3) { display: none; }
+  .hero-copy .promise { display: none; }                        /* "Check it yourself" says it further down */
+}
+@media (max-width: 640px) {
+  .tray .drop-text { font-size: 12px; letter-spacing: -0.005em; }
+  .hero-copy .lead { font-size: 15px; line-height: 1.5; }
+}
