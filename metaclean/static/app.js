@@ -22,76 +22,220 @@ const MAX_PHOTOS = 500;
 const HOME_TITLE = document.title;  // the page's own <title>, so the two never drift apart
 /** photo, video or audio, from the report once read, else from the name. */
 const kindOf = it => it.report?.kind ?? (VIDEO_RE.test(it.path) ? "video" : AUDIO_RE.test(it.path) ? "audio" : DOC_RE.test(it.path) ? "document" : "photo");
-const NOUN = { photo: ["photo", "photos"], video: ["video", "videos"], audio: ["recording", "recordings"], document: ["document", "documents"], file: ["file", "files"] };
 /** Details that are shown but never removed (comments, tracked changes, earlier versions in documents). */
 const infoIds = it => new Set(it.report ? Object.values(it.report.groups).flatMap(g => g.fields).filter(f => f.informational).map(f => f.id) : []);
 const isInfo = (it, h) => { const ids = infoIds(it); return h.ids.length > 0 && h.ids.every(id => ids.has(id)); };
 /** The noun for a set of items: their shared kind, or "file" when they're mixed. */
 const kindAll = items => { const ks = new Set(items.map(kindOf)); return ks.size === 1 ? [...ks][0] : "file"; };
-const one = k => NOUN[k][0], many = k => NOUN[k][1];
-const n = (c, one, many) => (c === 1 ? one : many.replace("#", c));
 
-// ---------------------------------------------------------------- wording
+// ---------------------------------------------------------------- wording, in the page's language
+// English is built in (metaclean/i18n/app_en.json is generated from it for translators). A translated page carries its
+// own table in <script type="application/json" id="l10n">: {"app": {key: text}, "text": {English engine text: text}}.
+// Every sentence has its own version per kind and for one/many, because grammar differs between languages.
+const EN = /*EN-START*/{
+ "about.link": "What UnMeta can and can't do",
+ "add.done.other": "Add more files",
+ "add.done.photo": "Add more photos",
+ "add.review.other": "Add files",
+ "add.review.photo": "Add photos",
+ "allDetails": "Show every detail ({n})",
+ "announce.cleaned.audio.one": "1 recording cleaned and checked.",
+ "announce.cleaned.audio.other": "{n} recordings cleaned and checked.",
+ "announce.cleaned.document.one": "1 document cleaned and checked.",
+ "announce.cleaned.document.other": "{n} documents cleaned and checked.",
+ "announce.cleaned.file.one": "1 file cleaned and checked.",
+ "announce.cleaned.file.other": "{n} files cleaned and checked.",
+ "announce.cleaned.photo.one": "1 photo cleaned and checked.",
+ "announce.cleaned.photo.other": "{n} photos cleaned and checked.",
+ "announce.cleaned.video.one": "1 video cleaned and checked.",
+ "announce.cleaned.video.other": "{n} videos cleaned and checked.",
+ "announce.found.one": "1 private detail found",
+ "announce.found.other": "{n} private details found",
+ "announce.read.one": "1 file read",
+ "announce.read.other": "{n} files read",
+ "confirm.body": "Each file will be overwritten with its clean copy. This can't be undone.",
+ "confirm.no": "Save copies instead",
+ "confirm.title": "Replace the files in “{name}”?",
+ "confirm.yes": "Replace originals",
+ "details.detail": "Detail",
+ "details.value": "Value",
+ "details.where": "Where",
+ "doc.clean": "Clean · UnMeta",
+ "doc.review": "Review · UnMeta",
+ "done.body.audio.one": "Private details are gone, and we checked the recording again afterwards. It sounds exactly the same.",
+ "done.body.audio.other": "Private details are gone, and we checked each recording again afterwards. They sound exactly the same.",
+ "done.body.document.one": "Private details are gone, and we checked the document again afterwards. It reads exactly the same.",
+ "done.body.document.other": "Private details are gone, and we checked each document again afterwards. They read exactly the same.",
+ "done.body.file.one": "Private details are gone, and we checked the file again afterwards. It is exactly the same.",
+ "done.body.file.other": "Private details are gone, and we checked each file again afterwards. They are exactly the same.",
+ "done.body.photo.one": "Private details are gone, and we checked the photo again afterwards. It looks exactly the same.",
+ "done.body.photo.other": "Private details are gone, and we checked each photo again afterwards. They look exactly the same.",
+ "done.body.video.one": "Private details are gone, and we checked the video again afterwards. It plays exactly the same.",
+ "done.body.video.other": "Private details are gone, and we checked each video again afterwards. They play exactly the same.",
+ "done.clean": "Clean",
+ "done.download.one": "Download",
+ "done.download.other": "Download all",
+ "done.downloadOne": "Download",
+ "done.leftover": "Some details couldn't be removed",
+ "done.removed": "Removed",
+ "done.replaced": "Your originals were replaced with clean copies",
+ "done.savedFolder": "Saved to the “cleaned” folder",
+ "done.share": "Share",
+ "done.title.audio.one": "Your recording is clean",
+ "done.title.audio.other": "Your recordings are clean",
+ "done.title.document.one": "Your document is clean",
+ "done.title.document.other": "Your documents are clean",
+ "done.title.file.one": "Your file is clean",
+ "done.title.file.other": "Your files are clean",
+ "done.title.photo.one": "Your photo is clean",
+ "done.title.photo.other": "Your photos are clean",
+ "done.title.video.one": "Your video is clean",
+ "done.title.video.other": "Your videos are clean",
+ "error": "Something went wrong. Please try again.",
+ "keep.recommended": "Recommended",
+ "keepOne.asChosen": "as you chose",
+ "keepOne.kept": "Kept",
+ "keepOne.label.audio": "Keep this in the recording",
+ "keepOne.label.document": "Keep this in the document",
+ "keepOne.label.file": "Keep this in the file",
+ "keepOne.label.photo": "Keep this in the photo",
+ "keepOne.label.video": "Keep this in the video",
+ "keepOne.stays": "Kept as it is",
+ "label.ai": "AI",
+ "label.comments": "Notes",
+ "label.company": "Company",
+ "label.dates": "Dates",
+ "label.device": "Device",
+ "label.hidden": "Copy",
+ "label.location": "GPS",
+ "label.personal": "Owner",
+ "label.pictures": "Pictures",
+ "label.revisions": "Versions",
+ "noPhotos": "No photos, videos, recordings or documents found there.",
+ "noWorker": "This browser can't run UnMeta. Try a recent version of Chrome, Edge, Firefox or Safari.",
+ "notice.ai": "If you post this, check whether the platform asks you to say it was made with AI.",
+ "notice.title": "Good to know",
+ "notice.visible.audio": "Voices and anything else you can hear in the recording are still there.",
+ "notice.visible.document": "Everything you can read in the document is still there, including comments and tracked changes.",
+ "notice.visible.file": "Anything you can see or hear in these files is still there.",
+ "notice.visible.photo": "Faces, signs and anything else you can see in the photo are still there.",
+ "notice.visible.video": "Faces, voices and anything else you can see or hear in the video are still there.",
+ "preset.ai.detail": "Removes only AI labels and editing history.",
+ "preset.ai.title": "Everything except AI labels",
+ "preset.camera.detail": "Keeps camera, lens and exposure. Removes location and serial numbers.",
+ "preset.camera.title": "Camera settings",
+ "preset.copyright.detail": "Keeps your credit. Removes everything else.",
+ "preset.copyright.title": "My name and copyright",
+ "preset.everything.detail": "Removes location, device, names, dates and AI labels.",
+ "preset.everything.title": "Nothing private",
+ "preset.location.detail": "Removes only where the photo was taken.",
+ "preset.location.title": "Everything except location",
+ "review.body.audio": "These details travel with a recording when you share it. Open one to see why it matters.",
+ "review.body.document": "These details travel with a document when you share it. Open one to see why it matters.",
+ "review.body.file": "These details travel with a file when you share it. Open one to see why it matters.",
+ "review.body.photo": "These details travel with a photo when you share it. Open one to see why it matters.",
+ "review.body.video": "These details travel with a video when you share it. Open one to see why it matters.",
+ "review.clean.audio.one": "Clean recording",
+ "review.clean.audio.other": "Clean {n} recordings",
+ "review.clean.document.one": "Clean document",
+ "review.clean.document.other": "Clean {n} documents",
+ "review.clean.file.one": "Clean file",
+ "review.clean.file.other": "Clean {n} files",
+ "review.clean.photo.one": "Clean photo",
+ "review.clean.photo.other": "Clean {n} photos",
+ "review.clean.video.one": "Clean video",
+ "review.clean.video.other": "Clean {n} videos",
+ "review.cleaning.one": "Cleaning…",
+ "review.cleaning.other": "Cleaning {i} of {n}…",
+ "review.count.one": "1 private detail",
+ "review.count.other": "{n} private details",
+ "review.none": "No private details found",
+ "review.reading.audio.one": "Reading your recording…",
+ "review.reading.audio.other": "Reading your recordings…",
+ "review.reading.document.one": "Reading your document…",
+ "review.reading.document.other": "Reading your documents…",
+ "review.reading.file.one": "Reading your file…",
+ "review.reading.file.other": "Reading your files…",
+ "review.reading.photo.one": "Reading your photo…",
+ "review.reading.photo.other": "Reading your photos…",
+ "review.reading.video.one": "Reading your video…",
+ "review.reading.video.other": "Reading your videos…",
+ "review.remove.audio": "Remove recording",
+ "review.remove.document": "Remove document",
+ "review.remove.file": "Remove file",
+ "review.remove.photo": "Remove photo",
+ "review.remove.video": "Remove video",
+ "review.title.audio.one": "Here's what this recording reveals",
+ "review.title.audio.other": "Here's what these recordings reveal",
+ "review.title.document.one": "Here's what this document reveals",
+ "review.title.document.other": "Here's what these documents reveal",
+ "review.title.file.one": "Here's what this file reveals",
+ "review.title.file.other": "Here's what these files reveal",
+ "review.title.photo.one": "Here's what this photo reveals",
+ "review.title.photo.other": "Here's what these photos reveal",
+ "review.title.video.one": "Here's what this video reveals",
+ "review.title.video.other": "Here's what these videos reveal",
+ "review.unreadable.audio": "Couldn't read this recording",
+ "review.unreadable.document": "Couldn't read this document",
+ "review.unreadable.file": "Couldn't read this file",
+ "review.unreadable.photo": "Couldn't read this photo",
+ "review.unreadable.video": "Couldn't read this video",
+ "skipped.big.one": "1 file is too large and was skipped.",
+ "skipped.big.other": "{n} files are too large and were skipped.",
+ "skipped.dup.one": "1 file was already added.",
+ "skipped.dup.other": "{n} files were already added.",
+ "skipped.limits": "Photos can be up to 200 MB, videos and audio up to 4 GB.",
+ "skipped.many": "You can add up to {max} files at a time.",
+ "skipped.type.one": "1 file isn't a photo, video, recording or document UnMeta can read, and was skipped.",
+ "skipped.type.other": "{n} files aren't photos, videos, recordings or documents UnMeta can read, and were skipped."
+}/*EN-END*/;
+const L10N = (() => { try { return JSON.parse(document.getElementById("l10n")?.textContent || "{}"); } catch { return {}; } })();
+const t = (key, vars = {}) => String(L10N.app?.[key] ?? EN[key] ?? key).replace(/\{(\w+)\}/g, (_, v) => String(vars[v] ?? ""));
+const pl = (key, c, vars = {}) => t(`${key}.${c === 1 ? "one" : "other"}`, { n: c, ...vars });
+/** Wording that comes from the engine (finding titles and explanations, notes), translated by its English text. */
+const tx = s => (L10N.text && Object.hasOwn(L10N.text, s) ? L10N.text[s] : s);
+
 // Vocabulary: "photo" (never image/file), "private details" (never metadata), "clean", "download", "share".
 const COPY = {
-  add: { review: k => (k === "photo" ? "Add photos" : "Add files"), done: k => (k === "photo" ? "Add more photos" : "Add more files") },
+  add: { review: k => t(k === "photo" ? "add.review.photo" : "add.review.other"), done: k => t(k === "photo" ? "add.done.photo" : "add.done.other") },
   review: {
-    title: (c, k) => (c === 1 ? `Here's what this ${one(k)} reveals` : `Here's what these ${many(k)} reveal`),
-    body: k => `These details travel with a ${one(k)} when you share it. Open one to see why it matters.`,
-    reading: (c, k) => (c === 1 ? `Reading your ${one(k)}…` : `Reading your ${many(k)}…`),
-    count: c => n(c, "1 private detail", "# private details"),
-    none: "No private details found",
-    clean: (c, k) => (c === 1 ? `Clean ${one(k)}` : `Clean ${c} ${many(k)}`),
-    cleaning: (i, c) => (c === 1 ? "Cleaning…" : `Cleaning ${i} of ${c}…`),
-    unreadable: k => `Couldn't read this ${one(k)}`,
-    remove: k => `Remove ${one(k)}`,
+    title: (c, k) => pl(`review.title.${k}`, c),
+    body: k => t(`review.body.${k}`),
+    reading: (c, k) => pl(`review.reading.${k}`, c),
+    count: c => pl("review.count", c),
+    none: t("review.none"),
+    clean: (c, k) => pl(`review.clean.${k}`, c),
+    cleaning: (i, c) => (c === 1 ? t("review.cleaning.one") : t("review.cleaning.other", { i, n: c })),
+    unreadable: k => t(`review.unreadable.${k}`),
+    remove: k => t(`review.remove.${k}`),
   },
   done: {
-    title: (c, k) => (c === 1 ? `Your ${one(k)} is clean` : `Your ${many(k)} are clean`),
-    body: (c, k) => {
-      const [it, they] = { photo: ["looks", "look"], video: ["plays", "play"], audio: ["sounds", "sound"], document: ["reads", "read"], file: ["is", "are"] }[k];
-      return c === 1 ? `Private details are gone, and we checked the ${one(k)} again afterwards. It ${it} exactly the same.`
-        : `Private details are gone, and we checked each ${one(k)} again afterwards. They ${they} exactly the same.`;
-    },
-    removed: "Removed",
-    leftover: "Some details couldn't be removed",
-    download: c => n(c, "Download", "Download all"),
-    downloadOne: "Download",
-    share: "Share",
-    clean: "Clean",
-    savedFolder: "Saved to the “cleaned” folder",
-    replaced: "Your originals were replaced with clean copies",
+    title: (c, k) => pl(`done.title.${k}`, c),
+    body: (c, k) => pl(`done.body.${k}`, c),
+    removed: t("done.removed"),
+    leftover: t("done.leftover"),
+    download: c => pl("done.download", c),
+    downloadOne: t("done.downloadOne"),
+    share: t("done.share"),
+    clean: t("done.clean"),
+    savedFolder: t("done.savedFolder"),
+    replaced: t("done.replaced"),
   },
-  notice: {
-    title: "Good to know",
-    ai: "If you post this, check whether the platform asks you to say it was made with AI.",
-    visible: k => ({
-      photo: "Faces, signs and anything else you can see in the photo are still there.",
-      video: "Faces, voices and anything else you can see or hear in the video are still there.",
-      audio: "Voices and anything else you can hear in the recording are still there.",
-      document: "Everything you can read in the document is still there, including comments and tracked changes.",
-      file: "Anything you can see or hear in these files is still there.",
-    })[k],
-  },
-  keep: { recommended: "Recommended" },
-  about: { link: "What UnMeta can and can't do" },
-  confirm: {
-    title: name => `Replace the files in “${name}”?`,
-    body: "Each file will be overwritten with its clean copy. This can't be undone.",
-    yes: "Replace originals",
-    no: "Save copies instead",
-  },
+  notice: { title: t("notice.title"), ai: t("notice.ai"), visible: k => t(`notice.visible.${k}`) },
+  keep: { recommended: t("keep.recommended") },
+  about: { link: t("about.link") },
+  confirm: { title: name => t("confirm.title", { name }), body: t("confirm.body"), yes: t("confirm.yes"), no: t("confirm.no") },
   skipped: {
-    big: c => n(c, "1 file is too large and was skipped.", "# files are too large and were skipped.") + " Photos can be up to 200 MB, videos and audio up to 4 GB.",
-    type: c => n(c, "1 file isn't a photo, video, recording or document UnMeta can read, and was skipped.", "# files aren't photos, videos, recordings or documents UnMeta can read, and were skipped."),
-    dup: c => n(c, "1 file was already added.", "# files were already added."),
-    many: `You can add up to ${MAX_PHOTOS} files at a time.`,
+    big: c => `${pl("skipped.big", c)} ${t("skipped.limits")}`,
+    type: c => pl("skipped.type", c),
+    dup: c => pl("skipped.dup", c),
+    many: t("skipped.many", { max: MAX_PHOTOS }),
   },
-  noPhotos: "No photos, videos, recordings or documents found there.",
-  keepOne: { label: k => `Keep this in the ${one(k)}`, kept: "Kept", stays: "Kept as it is" },
-  allDetails: c => `Show every detail (${c})`,
-  noWorker: "This browser can't run UnMeta. Try a recent version of Chrome, Edge, Firefox or Safari.",
-  error: "Something went wrong. Please try again.",
+  noPhotos: t("noPhotos"),
+  keepOne: { label: k => t(`keepOne.label.${k}`), kept: t("keepOne.kept"), stays: t("keepOne.stays") },
+  allDetails: c => t("allDetails", { n: c }),
+  noWorker: t("noWorker"),
+  error: t("error"),
 };
 
 const SUPPORT_URL = "https://www.buymeacoffee.com/kabirsharma";
@@ -102,23 +246,23 @@ const COPYRIGHT = ["exif:0:315", "exif:0:33432", "xmp:dc:creator", "xmp:dc:right
 const SERIALS = ["exif:exif:42033", "exif:exif:42037", "exif:exif:42032", "exif:0:316", "xmp:aux:SerialNumber",
   "xmp:exifEX:BodySerialNumber", "xmp:exifEX:LensSerialNumber", "xmp:aux:LensSerialNumber", "exif:exif:42016"];
 const PRESETS = [
-  { key: "everything", icon: "shield-check", title: "Nothing private", detail: "Removes location, device, names, dates and AI labels.",
+  { key: "everything", icon: "shield-check", title: t("preset.everything.title"), detail: t("preset.everything.detail"),
     options: { keepCategories: ["technical"] } },
-  { key: "copyright", icon: "copyright", title: "My name and copyright", detail: "Keeps your credit. Removes everything else.",
+  { key: "copyright", icon: "copyright", title: t("preset.copyright.title"), detail: t("preset.copyright.detail"),
     options: { keepCategories: ["technical"], keepFields: COPYRIGHT } },
-  { key: "camera", icon: "aperture", title: "Camera settings", detail: "Keeps camera, lens and exposure. Removes location and serial numbers.",
+  { key: "camera", icon: "aperture", title: t("preset.camera.title"), detail: t("preset.camera.detail"),
     options: { keepCategories: ["technical", "device"], dropFields: SERIALS } },
-  { key: "location", icon: "pin-off", title: "Everything except location", detail: "Removes only where the photo was taken.",
+  { key: "location", icon: "pin-off", title: t("preset.location.title"), detail: t("preset.location.detail"),
     options: { keepCategories: ["device", "personal", "ai", "technical", "other"] } },
-  { key: "ai", icon: "sparkle-off", title: "Everything except AI labels", detail: "Removes only AI labels and editing history.",
+  { key: "ai", icon: "sparkle-off", title: t("preset.ai.title"), detail: t("preset.ai.detail"),
     options: { keepCategories: ["location", "device", "personal", "technical", "other"] } },
 ];
 
 // ---------------------------------------------------------------- icons (design/icons.json → /static/icons.svg, inlined)
 const ic = (name, cls = "ic") => `<svg class="${cls}" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
 const CAT_ICON = { location: "pin", device: "camera", personal: "person", ai: "sparkle", hidden: "layers" };
-const LABEL = { location: "GPS", device: "Device", personal: "Owner", ai: "AI", hidden: "Copy", company: "Company", dates: "Dates",
-  comments: "Notes", revisions: "Versions", pictures: "Pictures" };
+const LABEL = Object.fromEntries(["location", "device", "personal", "ai", "hidden", "company", "dates", "comments", "revisions", "pictures"]
+  .map(k => [k, t(`label.${k}`)]));
 const PENCIL = `<svg class="pencil-ring" viewBox="0 0 200 48" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path pathLength="1" d="M18 30C10 14 70 5 132 6s70 10 62 24c-7 12-70 15-118 13C26 41 2 34 12 20c6-8 22-12 40-14"/></svg>`;
 const barWidth = v => (v.length > 22 ? "w-l" : v.length > 11 ? "w-m" : "w-s");
 
@@ -244,7 +388,7 @@ async function add(list) {
   }, 2);
   setActivity(items.some(i => i.status === "error") ? "error" : "idle", 600);
   const found = items.reduce((s, i) => s + (i.found?.length || 0), 0);
-  announce(`${n(items.length, "1 photo read", "# photos read")}. ${n(found, "1 private detail found", "# private details found")}.`);
+  announce(`${pl("announce.read", items.length)}. ${pl("announce.found", found)}.`);
 }
 async function pool(list, fn, size = 3) {
   const q = [...list];
@@ -315,7 +459,7 @@ async function cleanAll() {
   withTransition(render);
   $("#listTitle").focus();
   { const cleaned = state.items.filter(i => i.out), k = kindAll(cleaned);
-    announce(cleaned.length === 1 ? `1 ${one(k)} cleaned and checked.` : `${cleaned.length} ${many(k)} cleaned and checked.`); }
+    announce(pl(`announce.cleaned.${k}`, cleaned.length)); }
   if (state.dirRoot) toast(state.overwrite ? COPY.done.replaced : COPY.done.savedFolder, "check");
 }
 const outPath = it => { const p = it.path.split("/"); p[p.length - 1] = it.out.name; return p.join("/"); };
@@ -413,7 +557,7 @@ function card(it, i) {
   const first = it.out && !it.shown; // the first render after cleaning plays the redaction and the stamp
   if (it.out) it.shown = true;
   const n = String(i + 1).padStart(2, "0");
-  const stamp = it.out?.verified ? `<span class="stamp${first ? " stamp-in" : ""}" aria-hidden="true">Clean</span>` : "";
+  const stamp = it.out?.verified ? `<span class="stamp${first ? " stamp-in" : ""}" aria-hidden="true">${COPY.done.clean}</span>` : "";
   const kind = kindOf(it);
   const pic = !src ? "" : kind === "video" ? `<video class="thumb" muted playsinline preload="metadata" src="${src}#t=0.1"></video>`
     : kind === "audio" ? `<span class="sound">${ic("audio")}<span class="data">${esc(base(it.path).split(".").pop().toUpperCase())}</span></span>`
@@ -435,14 +579,14 @@ function card(it, i) {
       ${many ? `<button class="icon-btn" type="button" data-dl="${i}" aria-label="${COPY.done.downloadOne} ${name}">${ic("download")}</button>` : ""}</div>`;
     body = it.out.removed.length
       ? `<ul class="removed" aria-label="${COPY.done.removed}">${it.out.removed.map(h =>
-        `<li><span class="label">${LABEL[h.key] ?? esc(h.key)}</span><span class="redacted"><span class="bar ${barWidth(h.value)}" aria-hidden="true"></span><span class="what">${esc(h.title)} · ${COPY.done.removed.toLowerCase()}</span></span></li>`).join("")}</ul>` : "";
-    if (!it.out.verified && it.out.notes.length) body += `<p class="card-note" role="note">${ic("alert")}${esc(it.out.notes[0])}</p>`;
+        `<li><span class="label">${LABEL[h.key] ?? esc(h.key)}</span><span class="redacted"><span class="bar ${barWidth(h.value)}" aria-hidden="true"></span><span class="what">${esc(tx(h.title))} · ${COPY.done.removed.toLowerCase()}</span></span></li>`).join("")}</ul>` : "";
+    if (!it.out.verified && it.out.notes.length) body += `<p class="card-note" role="note">${ic("alert")}${esc(tx(it.out.notes[0]))}</p>`;
     const keptNow = (it.found || []).filter(h => it.keepKeys?.has(h.key) && !isInfo(it, h));
     const stays = (it.found || []).filter(h => isInfo(it, h));
     if (stays.length) body += `<ul class="removed kept-list" aria-label="${COPY.keepOne.stays}">${stays.map(h =>
-      `<li><span class="label">${LABEL[h.key] ?? esc(h.key)}</span><span class="what">${esc(h.title)} · ${esc(h.value)} · ${COPY.keepOne.stays.toLowerCase()}</span></li>`).join("")}</ul>`;
+      `<li><span class="label">${LABEL[h.key] ?? esc(h.key)}</span><span class="what">${esc(tx(h.title))} · ${esc(h.value)} · ${COPY.keepOne.stays.toLowerCase()}</span></li>`).join("")}</ul>`;
     if (keptNow.length) body += `<ul class="removed kept-list" aria-label="${COPY.keepOne.kept}">${keptNow.map(h =>
-      `<li><span class="label">${LABEL[h.key] ?? esc(h.key)}</span><span class="what">${esc(h.title)} · <mark>${esc(h.value)}</mark> · ${COPY.keepOne.kept.toLowerCase()}, as you chose</span></li>`).join("")}</ul>`;
+      `<li><span class="label">${LABEL[h.key] ?? esc(h.key)}</span><span class="what">${esc(tx(h.title))} · <mark>${esc(h.value)}</mark> · ${COPY.keepOne.kept.toLowerCase()}, ${t("keepOne.asChosen")}</span></li>`).join("")}</ul>`;
   } else {
     const f = it.found || [];
     const toRemove = f.filter(h => !isInfo(it, h)).length;
@@ -452,8 +596,8 @@ function card(it, i) {
     const kept = k => it.keepKeys?.has(k);
     body = f.length ? `<div class="findings">${f.map(h => { const info = isInfo(it, h); return `<details class="finding${kept(h.key) || info ? " is-kept" : ""}"><summary>
         <span class="label">${LABEL[h.key] ?? esc(h.key)}</span>
-        <span class="f-main"><span class="f-title">${esc(h.title)}${info ? ` <span class="tag quiet">${COPY.keepOne.stays}</span>` : kept(h.key) ? ` <span class="tag quiet">${COPY.keepOne.kept}</span>` : ""}</span><span class="data f-value">${info ? esc(h.value) : `<mark>${esc(h.value)}</mark>`}</span></span>
-        ${ic("chevron-down", "ic chev")}</summary><p class="why">${esc(h.why)}</p>
+        <span class="f-main"><span class="f-title">${esc(tx(h.title))}${info ? ` <span class="tag quiet">${COPY.keepOne.stays}</span>` : kept(h.key) ? ` <span class="tag quiet">${COPY.keepOne.kept}</span>` : ""}</span><span class="data f-value">${info ? esc(h.value) : `<mark>${esc(h.value)}</mark>`}</span></span>
+        ${ic("chevron-down", "ic chev")}</summary><p class="why">${esc(tx(h.why))}</p>
         ${info ? "" : `<label class="keep-one"><input type="checkbox" data-keep="${i}" value="${esc(h.key)}"${kept(h.key) ? " checked" : ""}${state.busy ? " disabled" : ""}> ${COPY.keepOne.label(kindOf(it))}</label>`}</details>`; }).join("")}</div>` : "";
     body += allDetails(it);
   }
@@ -471,7 +615,7 @@ function allDetails(it) {
   if (!fields.length) return "";
   const rows = fields.map(f => `<tr><th scope="row">${esc(f.label)}</th><td class="data">${esc(f.value.length > 140 ? f.value.slice(0, 140) + "…" : f.value)}</td><td class="muted">${esc(f.source)}</td></tr>`).join("");
   return `<details class="all-details"><summary>${ic("report")}${COPY.allDetails(fields.length)}</summary>
-    <div class="table-wrap" role="region" aria-label="${COPY.allDetails(fields.length)}" tabindex="0"><table class="facts-table"><thead><tr><th scope="col">Detail</th><th scope="col">Value</th><th scope="col">Where</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+    <div class="table-wrap" role="region" aria-label="${COPY.allDetails(fields.length)}" tabindex="0"><table class="facts-table"><thead><tr><th scope="col">${t("details.detail")}</th><th scope="col">${t("details.value")}</th><th scope="col">${t("details.where")}</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
 
 function notices(done) {
@@ -495,8 +639,19 @@ function render() {
   const items = state.items, usable = items.filter(i => i.status !== "error");
   const done = usable.length > 0 && usable.every(i => i.out);
   document.body.dataset.screen = items.length ? "list" : "home";
+  // one main heading at a time: the results heading is an h2 in the page (so the page has a single h1 for search
+  // engines) and becomes the h1 while the results screen is showing (the home headline is hidden then)
+  const lt = $("#listTitle"), want = items.length ? "H1" : "H2";
+  if (lt.tagName !== want) {
+    const h = document.createElement(want);
+    for (const a of lt.attributes) h.setAttribute(a.name, a.value);
+    h.textContent = lt.textContent;
+    const focused = document.activeElement === lt;
+    lt.replaceWith(h);
+    if (focused) h.focus();
+  }
   document.title = !items.length ? HOME_TITLE
-    : `${done ? "Clean" : "Review"} · UnMeta`;
+    : t(done ? "doc.clean" : "doc.review");
   $("#footer").hidden = items.length > 0;
   $("#home").hidden = items.length > 0;
   $("#list").hidden = !items.length;

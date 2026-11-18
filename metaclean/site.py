@@ -321,6 +321,10 @@ def render_translated(index_html: str, mod, page, base: str) -> str:
         body = body.replace(f'href="{_i18n.english_path(p["key"])}"', f'href="/{p["slug"]}/"')
     body = body.replace('<a href="/">UnMeta</a>', f'<a href="/{prefix}/">UnMeta</a>')
     body = body.replace("<!--PAGE-LINKS-->", page_links_translated(mod), 1)
+    # the app screens' wording in this language: a JSON data block (never executed, so the page's script policy holds)
+    l10n = json.dumps({"app": getattr(mod, "APP", {}), "text": getattr(mod, "TEXT", {})}, ensure_ascii=False)
+    l10n = l10n.replace("</", "<\\/").replace("<!--", "<\\!--")
+    body = body.replace('<script src="/static/app.js', f'<script type="application/json" id="l10n">{l10n}</script>\n<script src="/static/app.js', 1)
     body = body.replace("<!--LANG-SWITCH-->", lang_switch(mod.LANG, page["key"]), 1)
     body = body.replace('<nav class="foot-nav"', lang_links(page["key"]) + '\n    <nav class="foot-nav"', 1)
     return head + "</head>" + body

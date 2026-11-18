@@ -53,5 +53,20 @@ for p in mod.PAGES:
     for en in ["Choose files", "Works with", "Removes", "Never uploaded", "No quality loss"]:
         if re.search(rf">\s*{re.escape(en)}\s*<", hero):
             errors.append(f"{p['slug']}: English left in the hero: {en}")
+# the app screens: every key and engine sentence translated, with the same {placeholders}
+import json as _json
+here = Path(i18n.__file__).parent
+app_en = _json.loads((here / "app_en.json").read_text())
+text_en = _json.loads((here / "text_en.json").read_text())
+APP, TEXT = getattr(mod, "APP", {}), getattr(mod, "TEXT", {})
+miss = [k for k in app_en if not APP.get(k)]
+if miss:
+    errors.append(f"APP strings missing ({len(miss)}): {miss[:8]}")
+for k, en in app_en.items():
+    if k in APP and sorted(re.findall(r"\{\w+\}", en)) != sorted(re.findall(r"\{\w+\}", APP[k])):
+        errors.append(f"APP {k}: placeholders differ from English {re.findall(r'\{\w+\}', en)}")
+miss = [s for s in text_en if not TEXT.get(s)]
+if miss:
+    errors.append(f"TEXT sentences missing ({len(miss)}): {[m[:40] for m in miss[:5]]}")
 print("\n".join(errors) if errors else f"{mod.NAME}: {len(mod.PAGES)} pages, {len(keys)} UI strings, all checks pass")
 sys.exit(1 if errors else 0)

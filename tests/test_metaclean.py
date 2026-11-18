@@ -970,3 +970,27 @@ def test_translated_pages_have_no_english_left():
         left = [t for t in texts(c.get(f"/{slug}/").get_data(as_text=True)) & english
                 if t not in allowed and (_re.search(r"[A-Za-z]{3,} [a-z]{2,}", t) or _re.fullmatch(r"[A-Z][a-z]{3,}", t))]
         assert not left, (slug, left)
+
+
+def test_app_screens_are_translated_on_every_translated_page():
+    """The review and results screens get their wording from a JSON data block in the page's language."""
+    import json as _json
+    import re as _re
+    from pathlib import Path
+    from metaclean.server import create_app
+    from metaclean.i18n import TRANSLATED
+    here = Path(__file__).resolve().parent.parent / "metaclean/i18n"
+    app_en = _json.loads((here / "app_en.json").read_text())
+    text_en = _json.loads((here / "text_en.json").read_text())
+    c = create_app().test_client()
+    assert 'id="l10n"' not in c.get("/").get_data(as_text=True)          # English uses the built-in table
+    # the table in app.js and app_en.json must not drift apart
+    js = (Path(__file__).resolve().parent.parent / "metaclean/static/app.js").read_text()
+    assert _json.loads(js.split("/*EN-START*/", 1)[1].split("/*EN-END*/", 1)[0]) == app_en
+    for slug in TRANSLATED:
+        html = c.get(f"/{slug}/").get_data(as_text=True)
+        block = _re.search(r'<script type="application/json" id="l10n">(.*?)</script>', html, _re.S).group(1)
+        data = _json.loads(block)
+        assert set(app_en) <= set(data["app"]), slug
+        assert set(text_en) <= set(data["text"]), slug
+        assert all(data["app"][k] != v for k, v in app_en.items() if len(v) > 20), slug   # sentences really translated
