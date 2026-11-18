@@ -281,7 +281,12 @@ def create_app() -> Flask:
 
     def finish(html: str, key: str = "") -> str:
         html = html.replace("<!--LANG-SWITCH-->", SITE.lang_switch("en", key), 1)
-        return html.replace("<!--PAGE-LINKS-->", SITE.page_links())
+        html = html.replace("<!--PAGE-LINKS-->", SITE.page_links())
+        # "you are here": the header link to this page
+        head_end = html.index("</header>")
+        here = f'href="{request.path}"'
+        header = html[:head_end].replace(here, f'{here} aria-current="page"')
+        return header + html[head_end:]
 
     @app.get("/")
     def index():

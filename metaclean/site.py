@@ -341,5 +341,6 @@ def lang_switch(current: str, key: str) -> str:
     label = LANG_LABEL.get(current, "Language")
     return (f'<details class="menu langs" id="langs"><summary class="text-btn" aria-label="{label}: {_html.escape(_lang_name(current))}">'
             '<svg class="ic" aria-hidden="true" focusable="false"><use href="#i-globe"/></svg>'
-            f'<span class="lang-code">{short}</span></summary>'
+            f'<span class="lang-code">{short}</span>'
+            '<svg class="ic chev" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></summary>'
             f'<div class="menu-panel lang-panel"><p class="label">{label}</p><ul>{"".join(items)}</ul></div></details>')
