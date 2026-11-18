@@ -5,8 +5,8 @@
 import { type Bytes, ascii, concat, indexOf, latin1, le32, u16be, u32be, u32le, utf8Decode, utf8Encode } from "./bytes.ts";
 import * as C from "./containers.ts";
 import { type Options, type Payloads, payloads, wants } from "./clean.ts";
-import { F, type Field, type Inventory, type Kind, aiSignals, readC2paInto, readXmpInto } from "./inspect.ts";
-import { type Category, type Risk, isAiText } from "./taxonomy.ts";
+import { F, type Field, type Inventory, type Kind, aiSignals, inspect, readC2paInto, readXmpInto } from "./inspect.ts";
+import { CATEGORIES, type Category, type Risk, isAiText, maxRisk } from "./taxonomy.ts";
 
 export interface Source { size: number; read(off: number, len: number): Promise<Bytes> }
 export type Part = { from: number; to: number } | { bytes: Bytes };
@@ -15,16 +15,20 @@ export const bytesSource = (b: Bytes): Source => ({ size: b.length, read: async 
 
 /** A Source that reads the output of a clean (original ranges + new bytes) without assembling it. */
 export function partsSource(src: Source, parts: Part[]): Source {
-  const spans: [number, Part][] = [];
+  // where each part starts in the output, computed once; a read finds its first part by binary search
+  const starts: number[] = [], lens: number[] = [];
   let size = 0;
-  for (const p of parts) { spans.push([size, p]); size += "bytes" in p ? p.bytes.length : p.to - p.from; }
+  for (const p of parts) { const l = "bytes" in p ? p.bytes.length : p.to - p.from; starts.push(size); lens.push(l); size += l; }
   return {
     size,
     async read(off, len) {
+      off = Math.max(0, off);
       const end = Math.min(size, off + len), out = new Uint8Array(Math.max(0, end - off));
-      for (const [at, p] of spans) {
-        const plen = "bytes" in p ? p.bytes.length : p.to - p.from;
-        const a = Math.max(off, at), b = Math.min(end, at + plen);
+      let lo = 0, hi = parts.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= off) lo = mid; else hi = mid - 1; }
+      for (let i = lo; i < parts.length && starts[i] < end; i++) {
+        const at = starts[i], p = parts[i];
+        const a = Math.max(off, at), b = Math.min(end, at + lens[i]);
         if (a >= b) continue;
         const chunk = "bytes" in p ? p.bytes.subarray(a - at, b - at) : await src.read(p.from + (a - at), b - a);
         out.set(chunk, a - off);
@@ -32,6 +36,17 @@ export function partsSource(src: Source, parts: Part[]): Source {
       return out;
     },
   };
+}
+
+/** Joins neighbouring untouched ranges, so a file of many small blocks doesn't become many small reads. */
+function mergeParts(parts: Part[]): Part[] {
+  const out: Part[] = [];
+  for (const p of parts) {
+    const last = out[out.length - 1];
+    if (!("bytes" in p) && last && !("bytes" in last) && last.to === p.from) out[out.length - 1] = { from: last.from, to: p.to };
+    else if ("bytes" in p ? p.bytes.length : p.to > p.from) out.push(p);
+  }
+  return out;
 }
 
 export type MediaFormat = "mp4" | "mp3" | "wav";
@@ -68,8 +83,12 @@ export interface MediaPlan {
   id3?: { end: number; header: Bytes; frames: { fieldId: string; raw: Bytes }[] };
   id3v1?: { start: number; ids: string[] };
   audio?: { start: number; end: number };   // MP3: where the audio frames are, after every tag block is set aside
+  holes?: { start: number; end: number }[];   // MP3: tags found inside the audio, cut out on clean
   // WAV
   chunks?: WavChunk[];
+  /** A field that must go whenever any of the details inside it goes (a cover picture's own EXIF, a chapter's sub-frames). */
+  links: { id: string; inner: string[] }[];
+  steps?: number;
 }
 interface WavChunk { id: string; start: number; end: number; region?: number; listType?: string; subs?: { fieldId: string; raw: Bytes }[]; ids: string[]; drop?: boolean }
 
@@ -78,7 +97,7 @@ export interface MediaInventory extends Inventory { media: MediaPlan }
 function newInventory(name: string, fmt: MediaFormat, size: number): MediaInventory {
   return { filename: name, fmt, kind: fmt === "mp4" ? "video" : "audio", size, width: 0, height: 0, orientation: 1, fields: [], aiSignals: [],
     gps: null, errors: [], exif: null, xmp: [], iptc: [], icc: null, c2pa: [],
-    media: { kind: fmt, regions: [], patches: new Map(), xmp: [], c2pa: [], metas: [] } };
+    media: { kind: fmt, regions: [], patches: new Map(), xmp: [], c2pa: [], metas: [], links: [] } };
 }
 
 function addPatch(inv: MediaInventory, id: string, p: Patch) {
@@ -87,11 +106,58 @@ function addPatch(inv: MediaInventory, id: string, p: Patch) {
   inv.media.patches.set(id, list);
 }
 
+const fieldIndex = new WeakMap<MediaInventory, Set<string>>();
 /** Add a field once; later sightings of the same id only add patches (e.g. a date stored in three headers). */
 function field(inv: MediaInventory, f: Field, p?: Patch) {
-  if (!inv.fields.some(x => x.id === f.id)) inv.fields.push(f);
+  let seen = fieldIndex.get(inv);
+  if (!seen) fieldIndex.set(inv, seen = new Set(inv.fields.map(x => x.id)));
+  if (!seen.has(f.id)) { seen.add(f.id); inv.fields.push(f); }
   if (p) addPatch(inv, f.id, p);
 }
+
+// Every block, box, chunk or frame walked counts against one budget, so a file of millions of tiny blocks can't
+// make the check (or the re-check of the output) take minutes. Past the budget the file is not reported clean.
+const MAX_STEPS = 100_000;
+const STEPS_ERROR = "This file has too many blocks to check.";
+function step(inv: MediaInventory): boolean {
+  inv.media.steps = (inv.media.steps ?? 0) + 1;
+  if (inv.media.steps <= MAX_STEPS) return true;
+  if (!inv.errors.includes(STEPS_ERROR)) inv.errors.push(STEPS_ERROR);
+  return false;
+}
+
+/**
+ * A cover picture is a photo with its own EXIF/XMP (GPS, camera, names). Read it with the photo inspector and add
+ * one field per category found inside, linked to the picture: the picture is kept only if every one of them is.
+ */
+function coverDetails(inv: MediaInventory, coverId: string, img: Bytes, keepable: boolean) {
+  let sub: Inventory | null = null;
+  try { sub = inspect(img, "cover"); } catch { sub = null; }
+  const cover = inv.fields.find(f => f.id === coverId);
+  if (!sub || sub.errors.length) {
+    // a picture that can't be read can't be shown to be free of details: it is never kept (a BMP has nowhere to hide them)
+    if (cover && !(img[0] === 0x42 && img[1] === 0x4d)) { cover.keepable = false; cover.note = "This embedded picture couldn't be checked, so it is always removed."; }
+    return;
+  }
+  const byCat = new Map<Category, Field[]>();
+  for (const f of sub.fields) {
+    if (f.category === "technical" || f.informational) continue;
+    byCat.set(f.category, [...byCat.get(f.category) ?? [], f]);
+  }
+  const inner: string[] = [];
+  for (const [c, fs] of byCat) {
+    const id = `${coverId}:${c}`;
+    const labels = [...new Set(fs.map(f => f.label))];
+    field(inv, F(id, c, "Cover picture", "cover", `Embedded picture: ${CATEGORIES[c] ?? c}`,
+      labels.slice(0, 8).join(", ") + (labels.length > 8 ? ", …" : ""), maxRisk(fs.map(f => f.risk)), keepable,
+      "Details stored inside the embedded picture. The picture is removed unless these are kept."));
+    inner.push(id);
+  }
+  if (inner.length) inv.media.links.push({ id: coverId, inner });
+}
+
+/** Printable runs of text inside a block, so a removed block's contents can be shown and searched for afterwards. */
+const printable = (b: Bytes) => (latin1(b).match(/[\x20-\x7e]{4,}/g) ?? []).join(" ").slice(0, 160);
 
 const allZero = (b: Bytes, s = 0, e = b.length) => { for (let i = s; i < e; i++) if (b[i] !== 0) return false; return true; };
 const iso6709 = (s: string): [number, number] | null => {
@@ -171,12 +237,13 @@ function mp4MetaItems(inv: MediaInventory, r: number, d: Bytes, meta: Box, scope
     if (b.type === "keys") {
       let p = b.body + 8;
       const n = u32be(d, b.body + 4);
-      for (let i = 0; i < n && p + 8 <= b.end; i++) { const sz = u32be(d, p); keys.push(latin1(d, p + 8, p + sz)); p += Math.max(8, sz); }
+      for (let i = 0; i < n && p + 8 <= b.end && step(inv); i++) { const sz = u32be(d, p); keys.push(latin1(d, p + 8, p + sz)); p += Math.max(8, sz); }
     }
   }
   for (const b of kids(d, start, meta.end)) {
     if (b.type !== "ilst") continue;
     for (const item of kids(d, b.body, b.end)) {
+      if (!step(inv)) return;
       const idx = u32be(d, item.start + 4);
       let key = keys.length && idx >= 1 && idx <= keys.length ? keys[idx - 1] : item.type;
       if (item.type === "----") {
@@ -192,6 +259,7 @@ function mp4MetaItems(inv: MediaInventory, r: number, d: Bytes, meta: Box, scope
         const id = `mp4:${scope}:${key}`;
         if (label === "Location") inv.gps ??= iso6709(v.text);
         field(inv, F(id, cat, "MP4", key, label, v.text, risk), { region: r, off: v.at, len: data.end - v.at, mode: "zero" });
+        if (v.picture) coverDetails(inv, id, d.subarray(v.at, data.end), true);
       }
     }
   }
@@ -200,6 +268,7 @@ function mp4MetaItems(inv: MediaInventory, r: number, d: Bytes, meta: Box, scope
 function mp4Udta(inv: MediaInventory, r: number, d: Bytes, udta: Box, scope: string) {
   markHandled(d, udta);
   for (const c of kids(d, udta.body, udta.end)) {
+    if (!step(inv)) return;
     const free: Patch = { region: r, off: c.start, len: c.end - c.start, mode: "free", hdr: c.hdr };
     if (c.type === "meta") { mp4Meta(inv, r, d, c, `${scope}.meta`); continue; }
     if (c.type === "free" || c.type === "skip") continue;
@@ -276,6 +345,7 @@ const MP4_CONTAINERS = new Set(["moov", "trak", "mdia", "minf", "stbl", "edts", 
 function mp4Walk(inv: MediaInventory, r: number, d: Bytes, start: number, end: number, scope: string, video: { yes: boolean }, depth = 0) {
   if (depth > 12) { inv.errors.push("This video's structure is nested too deeply to check."); return; }
   for (const b of kids(d, start, end)) {
+    if (!step(inv)) return;
     if (b.type === "trak") mp4TimedTrack(inv, d, b);
     if (b.type === "cmov") { inv.errors.push(CMOV_ERROR); continue; }
     if (MP4_CONTAINERS.has(b.type)) mp4Walk(inv, r, d, b.body, b.end, b.type === "trak" ? "track" : b.type === "moof" ? "fragment" : scope, video, depth + 1);
@@ -284,7 +354,28 @@ function mp4Walk(inv: MediaInventory, r: number, d: Bytes, start: number, end: n
     else if (b.type === "mvhd" || b.type === "tkhd" || b.type === "mdhd") mp4Header(inv, r, d, b);
     else if (b.type === "hdlr" && latin1(d, b.body + 8, b.body + 12) === "vide") video.yes = true;
     else if (b.type === "uuid") mp4Uuid(inv, r, d, b);
+    else if (depth === 0 && scope === "movie" && !MOOV_KNOWN.has(b.type)) mp4MoovOther(inv, r, d, b);
   }
+}
+
+// Children of 'moov' that players and the walk above know about. Anything else is a vendor's own block.
+const MOOV_KNOWN = new Set(["mvhd", "iods", "trak", "udta", "meta", "mvex", "uuid", "free", "skip", "wide", "ipmc", "cmov", "rmra",
+  "clip", "ctab", "prfl", "pdin", "meco", "mfra", "tref", "load", "pnot"]);
+const GPS_ERROR_NOTE = "This video has a dashcam GPS log stored with the frames. UnMeta can't remove it without re-encoding.";
+
+/** A vendor block directly inside 'moov': dashcam GPS indexes (Novatek 'gps '), or anything else that holds text. */
+function mp4MoovOther(inv: MediaInventory, r: number, d: Bytes, b: Box) {
+  if (/^gps[ 0-9]$/i.test(b.type)) {
+    // the index points at 'freeGPS' blocks among the frames, which can't be cut out without rewriting the sample tables
+    field(inv, F("mp4:movie:gps", "location", "MP4", b.type.trim(), "GPS track", "Dashcam GPS log", "high", false, GPS_ERROR_NOTE));
+    return;
+  }
+  const text = printable(d.subarray(b.body, Math.min(b.end, b.body + (1 << 20))));
+  if (!text) return;
+  const [cat, risk] = textOrAi(inv, text, /gps|latitude|longitude|location/i.test(text) ? "location" : "other",
+    /gps|latitude|longitude|location/i.test(text) ? "high" : "low");
+  field(inv, F(`mp4:movie:box:${b.type}`, cat, "MP4", b.type, `Vendor block ${b.type.trim()}`, text, risk, true),
+    { region: r, off: b.start, len: b.end - b.start, mode: "free", hdr: b.hdr });
 }
 
 const child = (d: Bytes, b: Box | undefined, type: string, skip = 0) => b && [...kids(d, b.body + skip, b.end)].find(c => c.type === type);
@@ -381,6 +472,7 @@ async function inspectMp4(inv: MediaInventory, src: Source) {
   const video = { yes: false };
   let kept = 0;
   for (let pos = 0; pos + 8 <= src.size;) {
+    if (!step(inv)) break;
     const h = await src.read(pos, 16);
     let size = u32be(h, 0), hdr = 8;
     const type = latin1(h, 4, 8);
@@ -390,6 +482,10 @@ async function inspectMp4(inv: MediaInventory, src: Source) {
       // anything after a broken box can't be checked, so the file can't be reported clean
       if (src.size - pos >= 8) inv.errors.push(pos === 0 ? "Damaged video file" : "Part of this video is damaged and couldn't be checked.");
       break;
+    }
+    if ((type === "free" || type === "skip") && size >= hdr + 4 && latin1(await src.read(pos + hdr, 4)) === "GPS ") {
+      // a top-level 'freeGPS' block: a dashcam's GPS log
+      field(inv, F("mp4:movie:gps", "location", "MP4", "freeGPS", "GPS track", "Dashcam GPS log", "high", false, GPS_ERROR_NOTE));
     }
     if (["moov", "moof", "uuid", "udta", "meta"].includes(type)) {
       // too big to check: record it and move on without reading it into memory
@@ -447,17 +543,31 @@ const ID3: Record<string, [string, Category, Risk]> = {
   PRIV: ["Private data", "other", "low"], GEOB: ["Embedded object", "other", "low"], UFID: ["File identifier", "other", "low"],
 };
 
-function readId3Frames(inv: MediaInventory, b: Bytes, ver: number, from: number, to: number, prefix: string, keepable = true) {
+/** Where the picture starts inside an APIC/PIC frame (after encoding, MIME type, picture type and description). */
+function apicImage(b: Bytes, s: number, e: number): Bytes {
+  for (let p = s; p + 4 <= e && p < s + 4096; p++) {
+    if ((b[p] === 0xff && b[p + 1] === 0xd8 && b[p + 2] === 0xff) || (b[p] === 0x89 && b[p + 1] === 0x50 && b[p + 2] === 0x4e && b[p + 3] === 0x47)) return b.subarray(p, e);
+  }
+  return b.subarray(s, e);
+}
+
+function readId3Frames(inv: MediaInventory, b: Bytes, ver: number, from: number, to: number, prefix: string, keepable = true, depth = 0) {
   const frames: { fieldId: string; raw: Bytes }[] = [];
   const idLen = ver === 2 ? 3 : 4, hdr = ver === 2 ? 6 : 10;
-  for (let p = from, n = 0; p + hdr <= to; n++) {
+  // numbered per frame id, so removing one frame doesn't rename the others
+  const count = new Map<string, number>();
+  for (let p = from; p + hdr <= to;) {
+    if (!step(inv)) break;
     const id = latin1(b, p, p + idLen);
     if (!/^[A-Z0-9]{3,4}$/.test(id)) break;
     const size = ver === 2 ? (b[p + 3] << 16) | (b[p + 4] << 8) | b[p + 5] : ver === 4 ? syncsafe(b, p + 4) : u32be(b, p + 4);
     const s = p + hdr, e = Math.min(to, s + size);
+    const n = count.get(id) ?? 0;
+    count.set(id, n + 1);
     const fid = `${prefix}:${id}:${n}`;
     let [label, cat, risk] = ID3[id] ?? (id[0] === "T" ? [id, "other", "low"] : id[0] === "W" ? ["Web link", "other", "low"] : [id, "other", "low"]) as [string, Category, Risk];
     let value: string;
+    let inner: string[] | null = null;
     if (id === "TXXX" || id === "TXX" || id === "COMM" || id === "COM") {
       const skip = id.startsWith("C") ? 4 : 1;   // COMM has a 3-byte language after the encoding byte
       const parts = id3Text(concat([b.subarray(s, s + 1), b.subarray(s + skip, e)]), 0, e - s - skip + 1);
@@ -466,21 +576,45 @@ function readId3Frames(inv: MediaInventory, b: Bytes, ver: number, from: number,
         if (/location|gps|latitude|longitude|place/i.test(parts)) [label, cat, risk] = ["Location", "location", "high"];
         else label = `Custom: ${parts.split(" / ")[0]}`;
       }
+    } else if ((id === "CHAP" || id === "CTOC") && depth < 4) {
+      // chapters and tables of contents hold their own frames (titles, pictures, even a location)
+      const z = b.indexOf(0, s);
+      let q = z < 0 || z >= e ? e : z + 1;
+      const element = latin1(b, s, Math.min(q, e)).replace(/\0+$/, "");
+      if (id === "CHAP") q += 16;
+      else {
+        const entries = b[q + 1] ?? 0;
+        q += 2;
+        for (let k = 0; k < entries && q < e; k++) { const zz = b.indexOf(0, q); q = zz < 0 || zz >= e ? e : zz + 1; }
+      }
+      const first = inv.fields.length;
+      if (q < e) readId3Frames(inv, b, ver, q, e, fid, keepable, depth + 1);
+      inner = inv.fields.slice(first).map(f => f.id);
+      label = id === "CHAP" ? "Chapter" : "Table of contents";
+      value = element ? `${label} ${element}` : `${(e - s).toLocaleString("en-US")} bytes`;
+      // the chapter is as sensitive as the most sensitive detail inside it
+      const sub = inv.fields.slice(first);
+      if (sub.length) {
+        const top = sub.reduce((x, y) => (RANK[y.category] > RANK[x.category] ? y : x));
+        [cat, risk] = [top.category, maxRisk(sub.map(f => f.risk))];
+      }
     } else if (id === "APIC" || id === "PIC") value = `${(e - s).toLocaleString("en-US")} bytes`;
     else if (id[0] === "T") value = id3Text(b, s, e);
     else value = `${(e - s).toLocaleString("en-US")} bytes`;
-    if (cat !== "location") [cat, risk] = textOrAi(inv, value, cat, risk);
+    if (cat !== "location" && !inner) [cat, risk] = textOrAi(inv, value, cat, risk);
     if (value) {
       field(inv, F(fid, cat, "ID3", id, label, value, risk, keepable));
       frames.push({ fieldId: fid, raw: b.slice(p, s + size) });
+      if (id === "APIC" || id === "PIC") coverDetails(inv, fid, apicImage(b, s, e), keepable);
+      if (inner?.length) inv.media.links.push({ id: fid, inner });
     }
     p = s + size;
   }
   return frames;
 }
 
-/** Printable runs of text inside a tag block, so a removed block's contents can be shown and searched for afterwards. */
-const printable = (b: Bytes) => (latin1(b).match(/[\x20-\x7e]{4,}/g) ?? []).join(" ").slice(0, 160);
+/** Which category wins when a block holds details of several kinds. */
+const RANK: Record<Category, number> = { location: 5, ai: 4, personal: 3, device: 2, other: 1, technical: 0 };
 
 async function readId3At(inv: MediaInventory, src: Source, pos: number, prefix: string, keepable: boolean) {
   const head = await src.read(pos, 10);
@@ -547,6 +681,54 @@ async function inspectMp3(inv: MediaInventory, src: Source) {
     } else break;
   }
   inv.media.audio = { start, end };
+  await id3InAudio(inv, src, start, end);
+}
+
+/** A plausible ID3v2 header at 'h' (sane version, flags and size, and a real frame or padding right after it). */
+function id3Header(h: Bytes, room: number): number {
+  if (h.length < 20 || latin1(h, 0, 3) !== "ID3") return -1;
+  const ver = h[3], flags = h[5];
+  if (ver < 2 || ver > 4 || h[4] === 0xff || flags & 0x0f || h[6] & 0x80 || h[7] & 0x80 || h[8] & 0x80 || h[9] & 0x80) return -1;
+  const size = syncsafe(h, 6), total = 10 + size + (flags & 0x10 ? 10 : 0);
+  if (size < 10 || total > room) return -1;
+  let f = 10;
+  if (flags & 0x40) f += ver === 4 ? syncsafe(h, 10) : u32be(h, 10) + 4;
+  if (f + 4 > h.length) return -1;
+  const id = latin1(h, f, f + (ver === 2 ? 3 : 4));
+  return /^[A-Z][A-Z0-9]{2,3}$/.test(id) ? total : -1;
+}
+
+/**
+ * A second ID3v2 tag in the middle of the audio (joined files, internet radio dumps). Look through the audio for
+ * tag headers; cut out the ones that sit cleanly between audio frames, and report the rest as not removable.
+ */
+async function id3InAudio(inv: MediaInventory, src: Source, start: number, end: number) {
+  const CH = 4 * 1024 * 1024, holes: { start: number; end: number }[] = [];
+  let found = 0;
+  for (let pos = start; pos + 10 <= end;) {
+    const buf = await src.read(pos, Math.min(CH + 2, end - pos));
+    let next = pos + CH;
+    for (let i = indexOf(buf, "ID3"); i >= 0 && i < CH; i = indexOf(buf, "ID3", i + 1)) {
+      const at = pos + i;
+      const total = id3Header(await src.read(at, 64), end - at);
+      if (total < 0) continue;
+      if (++found > 64 || total > 64 * 1024 * 1024) {
+        inv.errors.push("This recording has a tag inside the audio that UnMeta can't check.");
+        next = end;
+        break;
+      }
+      await readId3At(inv, src, at, `id3m${found}`, false);
+      const tagEnd = at + total;
+      const after = tagEnd < end ? await src.read(tagEnd, 3) : new Uint8Array(0);
+      const between = tagEnd === end || (after[0] === 0xff && (after[1] & 0xe0) === 0xe0) || latin1(after, 0, 3) === "ID3";
+      if (between) holes.push({ start: at, end: tagEnd });
+      else inv.errors.push("This recording has a tag inside the audio that couldn't be removed safely.");
+      next = tagEnd;
+      break;
+    }
+    pos = next;
+  }
+  if (holes.length) inv.media.holes = holes;
 }
 
 // ---------------------------------------------------------------- WAV (RIFF)
@@ -559,11 +741,94 @@ const INFO: Record<string, [string, Category, Risk]> = {
 };
 const META_CHUNKS = new Set(["LIST", "bext", "iXML", "_PMX", "id3 ", "ID3 ", "axml", "cart"]);
 
+// Chunks a player needs (format, samples, markers, loops, instrument and tempo hints, peak and level overviews).
+// Every other chunk is metadata: it is reported and removed, which never touches the samples.
+const WAV_KEEP = new Set(["fmt ", "data", "fact", "cue ", "plst", "smpl", "inst", "acid", "ds64", "PEAK", "levl", "chna"]);
+const WAV_PAD = new Set(["JUNK", "junk", "PAD ", "pad ", "FLLR", "fllr", "free"]);
+const wavKnown = (id: string) => WAV_KEEP.has(id) || WAV_PAD.has(id) || META_CHUNKS.has(id);
+const isChunkId = (h: Bytes, o = 0) => {
+  if (h.length < o + 8) return false;
+  for (let i = o; i < o + 4; i++) if (h[i] < 0x20 || h[i] > 0x7e) return false;
+  return true;
+};
+
+/** True when every byte from 'from' to 'to' is zero (checked up to 16 MB; longer counts as not zero). */
+async function zeroRange(src: Source, from: number, to: number): Promise<boolean> {
+  if (to - from > 16 * 1024 * 1024) return false;
+  for (let p = from; p < to; p += 1 << 20) if (!allZero(await src.read(p, Math.min(1 << 20, to - p)))) return false;
+  return true;
+}
+
+/** Does a run of well-formed chunks start at 'x' and end exactly at the end of the file? */
+async function wavChainToEnd(src: Source, x: number): Promise<boolean> {
+  for (let p = x, n = 0; n < 1000; n++) {
+    if (p === src.size) return true;
+    const h = await src.read(p, 8);
+    if (!isChunkId(h)) return false;
+    const size = u32le(h, 4), e = p + 8 + size;
+    if (e > src.size) return false;
+    if (e === src.size) return true;
+    p = e + (size & 1);
+  }
+  return false;
+}
+
+/**
+ * A 'data' chunk whose size runs past the end of the file (streaming recorders write 0xFFFFFFFF or never fix the
+ * size up). Metadata written after the samples then sits inside the declared size. Look at the end of the file for
+ * a metadata chunk followed by well-formed chunks up to the end; return where it starts, or -1.
+ */
+async function wavMetaAfter(src: Source, from: number): Promise<number> {
+  const CH = 4 * 1024 * 1024;
+  for (let pos = Math.max(from, src.size - 64 * 1024 * 1024); pos + 8 <= src.size; pos += CH) {
+    const buf = await src.read(pos, Math.min(CH + 3, src.size - pos));
+    for (let i = 0; i < CH && i + 4 <= buf.length; i++) {
+      const c = buf[i];
+      if (c !== 0x4c && c !== 0x62 && c !== 0x69 && c !== 0x5f && c !== 0x49 && c !== 0x61 && c !== 0x63) continue;   // L b i _ I a c
+      if (META_KEYS.has((c | (buf[i + 1] << 8) | (buf[i + 2] << 16) | (buf[i + 3] << 24)) >>> 0) && await wavChainToEnd(src, pos + i)) return pos + i;
+    }
+  }
+  return -1;
+}
+
+const META_KEYS = new Set([...META_CHUNKS].map(id => { const b = ascii(id); return (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) >>> 0; }));
+const WAV_UNREAD = "Part of this recording couldn't be read, so it can't be checked.";
+
 async function inspectWav(inv: MediaInventory, src: Source) {
   const chunks: WavChunk[] = [];
+  let prevOdd = false;
   for (let pos = 12; pos + 8 <= src.size;) {
-    const h = await src.read(pos, 12);
-    const id = latin1(h, 0, 4), size = u32le(h, 4), end = Math.min(src.size, pos + 8 + size + (size & 1));
+    if (!step(inv)) { chunks.push({ id: "", start: pos, end: src.size, ids: [] }); break; }
+    let h = await src.read(pos, 12);
+    if (prevOdd) {
+      // the chunk before had an odd size; many writers leave out its pad byte. Take whichever position gives a real header.
+      const u = await src.read(pos - 1, 12);
+      if (isChunkId(u) && !(isChunkId(h) && wavKnown(latin1(h, 0, 4))) && (wavKnown(latin1(u, 0, 4)) || !isChunkId(h))) {
+        pos -= 1;
+        h = u;
+        chunks[chunks.length - 1].end = pos;
+      }
+    }
+    if (!isChunkId(h)) {
+      // not a chunk: harmless zero padding at the end, or something that can't be read (and might hide details)
+      if (!await zeroRange(src, pos, src.size)) inv.errors.push(WAV_UNREAD);
+      chunks.push({ id: "", start: pos, end: src.size, ids: [] });   // copied as it is
+      break;
+    }
+    const id = latin1(h, 0, 4), size = u32le(h, 4);
+    let end = pos + 8 + size + (size & 1);
+    prevOdd = (size & 1) === 1;
+    if (pos + 8 + size > src.size) {
+      prevOdd = false;
+      if (id !== "data") {
+        // can't tell where this block really ends, or what it swallows: keep the bytes, but don't call the file clean
+        inv.errors.push("A block in this recording runs past the end of the file.");
+        chunks.push({ id, start: pos, end: src.size, ids: [] });
+        break;
+      }
+      const x = await wavMetaAfter(src, pos + 8);
+      end = x >= 0 ? x : src.size;
+    } else end = Math.min(end, src.size);
     const c: WavChunk = { id, start: pos, end, ids: [] };
     const listType = id === "LIST" ? latin1(h, 8, 12) : "";
     if (id === "LIST" && !/^(INFO|info|wavl)$/.test(listType)) {
@@ -571,7 +836,7 @@ async function inspectWav(inv: MediaInventory, src: Source) {
       if (size > 64 * 1024 * 1024) { inv.errors.push("A block in this recording is too large to check."); chunks.push(c); pos = end; continue; }
       const d = (await src.read(pos, end - pos)).slice();
       const texts: string[] = [];
-      for (let p = 12; p + 8 <= Math.min(d.length, 8 + size);) {
+      for (let p = 12; p + 8 <= Math.min(d.length, 8 + size) && step(inv);) {
         const n = u32le(d, p + 4), skip = /^(labl|note)$/.test(latin1(d, p, p + 4)) ? 4 : latin1(d, p, p + 4) === "ltxt" ? 20 : 0;
         const t = latin1(d, p + 8 + skip, Math.min(d.length, p + 8 + n)).replace(/\0+$/, "").replace(/[^\x20-\x7e\u00a0-\u00ff]+/g, " ").trim();
         if (t) texts.push(t);
@@ -595,7 +860,7 @@ async function inspectWav(inv: MediaInventory, src: Source) {
       if (id === "LIST") {
         c.listType = "INFO";
         c.subs = [];
-        for (let p = body + 4; p + 8 <= bodyEnd;) {
+        for (let p = body + 4; p + 8 <= bodyEnd && step(inv);) {
           const sid = latin1(d, p, p + 4), n = u32le(d, p + 4), e = Math.min(bodyEnd, p + 8 + n);
           const text = utf8Decode(d, p + 8, e).replace(/\0+$/, "").trim();
           if (text) {
@@ -640,6 +905,20 @@ async function inspectWav(inv: MediaInventory, src: Source) {
         field(inv, F(fid, cat, "WAV", id.trim(), label, `${(bodyEnd - body).toLocaleString("en-US")} bytes`, risk, false));
         c.ids.push(fid);
       }
+    } else if (id === "LIST" ? listType === "wavl" : WAV_KEEP.has(id)) {
+      // needed to play the recording: copied as it is
+    } else if (META_CHUNKS.has(id)) {
+      inv.errors.push("A block in this recording is too large to check.");
+    } else if (!(WAV_PAD.has(id) && await zeroRange(src, pos + 8, end))) {
+      // any other chunk (afsp, DISP, a recorder's own block, padding with something in it): report it and remove it
+      const text = printable(await src.read(pos + 8, Math.min(end - pos - 8, 1 << 20)));
+      const located = /gps|latitude|longitude|location/i.test(text);
+      const [cat, risk] = textOrAi(inv, text, located ? "location" : text ? "personal" : "other", located ? "high" : text ? "medium" : "low");
+      const fid = `wav:chunk:${id}`;
+      field(inv, F(fid, cat, "WAV", id, WAV_PAD.has(id) ? "Padding with hidden content" : `Block ${id.trim() || "?"}`,
+        text || `${size.toLocaleString("en-US")} bytes`, risk, false));
+      c.ids.push(fid);
+      c.drop = true;
     }
     chunks.push(c);
     pos = end;
@@ -684,7 +963,8 @@ function cleanMp4(inv: MediaInventory, P: Payloads, size: number): Part[] {
   }
   if (!P.c2pa) inv.media.c2pa.forEach(p => apply(regions, p));
   // nothing kept from a metadata box: turn the whole box (keys and all) into padding, so no empty entries remain
-  for (const m of inv.media.metas) if (!m.ids.some(id => P.intended.has(id) || inv.fields.find(f => f.id === id)?.category === "technical")) apply(regions, m.box);
+  const technical = new Set(inv.fields.filter(f => f.category === "technical").map(f => f.id));
+  for (const m of inv.media.metas) if (!m.ids.some(id => P.intended.has(id) || technical.has(id))) apply(regions, m.box);
   const parts: Part[] = [];
   let at = 0;
   inv.media.regions.forEach((r, i) => {
@@ -711,7 +991,9 @@ function cleanMp3(inv: MediaInventory, P: Payloads, size: number): Part[] {
     }
   }
   const audio = inv.media.audio ?? { start: id3?.end ?? 0, end: inv.media.id3v1 ? inv.media.id3v1.start : size };
-  parts.push({ from: audio.start, to: audio.end });
+  let at = audio.start;
+  for (const h of inv.media.holes ?? []) { if (h.start > at) parts.push({ from: at, to: h.start }); at = Math.max(at, h.end); }
+  if (audio.end > at) parts.push({ from: at, to: audio.end });
   return parts;
 }
 
@@ -738,27 +1020,71 @@ function cleanWav(inv: MediaInventory, P: Payloads): Part[] {
       if (P.xmp) parts.push({ bytes: riffChunk("_PMX", utf8Encode(P.xmp)) });
     } else if (c.ids.some(id => P.intended.has(id))) parts.push({ from: c.start, to: c.end });
   }
-  const size = parts.reduce((n, p) => n + ("bytes" in p ? p.bytes.length : p.to - p.from), 0);
-  return [{ bytes: concat([ascii("RIFF"), le32(size + 4), ascii("WAVE")]) }, ...parts];
+  const merged = mergeParts(parts);
+  const size = merged.reduce((n, p) => n + ("bytes" in p ? p.bytes.length : p.to - p.from), 0);
+  return [{ bytes: concat([ascii("RIFF"), le32(size + 4), ascii("WAVE")]) }, ...merged];
 }
 
-const SCAN_LIMIT = 16 * 1024 * 1024;   // untouched ranges larger than this are frames or samples, not details
+const SCAN_LIMIT = 16 * 1024 * 1024;
+const MAX_NEEDLE_BYTES = 512 * 1024;   // untouched ranges larger than this are frames or samples, not details
 
 async function stillContains(out: Source, parts: Part[], removed: Field[]): Promise<Field[]> {
+  const seen = new Set<string>();
   const needles = removed
     .filter(f => (f.risk === "medium" || f.risk === "high") && f.value.length >= 6 && !/^\d[\d,]* bytes$/.test(f.value))
     .flatMap(f => [f.value.slice(0, 40),
       // the same place is often stored several ways (ISO 6709, decimals): look for the coordinates themselves
-      ...(f.category === "location" ? f.value.match(/[+-]?\d{1,3}\.\d{3,}/g) ?? [] : [])].map(v => ({ f, b: utf8Encode(v) })));
+      ...(f.category === "location" ? f.value.match(/[+-]?\d{1,3}\.\d{3,}/g) ?? [] : [])].map(v => ({ f, v })))
+    .filter(({ v }) => !seen.has(v) && !!seen.add(v))
+    .map(({ f, v }) => ({ f, b: utf8Encode(v) }));
   if (!needles.length) return [];
   const found = new Set<Field>();
+  // too much text to look for in reasonable time: say so rather than skip the check
+  if (needles.reduce((n, x) => n + x.b.length, 0) > MAX_NEEDLE_BYTES) return [F("media:check", "other", "UnMeta", "check",
+    "Final check", "This file has too many details to double-check after cleaning.", "high", false)];
+  let search: (chunk: Bytes) => void;
+  if (needles.length <= 16) search = chunk => { for (const { f, b } of needles) if (!found.has(f) && indexOf(chunk, b) >= 0) found.add(f); };
+  else {
+    // many needles: one pass over the output with an Aho-Corasick automaton (state * 256 + byte -> state)
+    const go = new Map<number, number>(), out: number[][] = [[]];
+    needles.forEach(({ b }, i) => {
+      let st = 0;
+      for (const c of b) {
+        let t = go.get(st * 256 + c);
+        if (t === undefined) { t = out.length; go.set(st * 256 + c, t); out.push([]); }
+        st = t;
+      }
+      out[st].push(i);
+    });
+    const kidsOf: [number, number][][] = out.map(() => []);
+    for (const [k, t] of go) kidsOf[Math.floor(k / 256)].push([k % 256, t]);
+    const fail = new Int32Array(out.length), dict = new Int32Array(out.length), queue = kidsOf[0].map(([, t]) => t);
+    for (let q = 0; q < queue.length; q++) {
+      const st = queue[q];
+      for (const [c, t] of kidsOf[st]) {
+        let f = fail[st];
+        while (f && !go.has(f * 256 + c)) f = fail[f];
+        const g = st === 0 ? 0 : go.get(f * 256 + c) ?? 0;
+        fail[t] = g;
+        dict[t] = out[g].length ? g : dict[g];
+        queue.push(t);
+      }
+    }
+    search = chunk => {
+      let st = 0;
+      for (let i = 0; i < chunk.length; i++) {
+        const c = chunk[i];
+        let t = go.get(st * 256 + c);
+        while (t === undefined && st) { st = fail[st]; t = go.get(st * 256 + c); }
+        st = t ?? 0;
+        for (let m = out[st].length ? st : dict[st]; m; m = dict[m]) for (const k of out[m]) found.add(needles[k].f);
+      }
+    };
+  }
   let at = 0;
   for (const p of parts) {
     const len = "bytes" in p ? p.bytes.length : p.to - p.from;
-    if (len <= SCAN_LIMIT) {
-      const chunk = "bytes" in p ? p.bytes : await out.read(at, len);
-      for (const { f, b } of needles) if (!found.has(f) && indexOf(chunk, b) >= 0) found.add(f);
-    }
+    if (len <= SCAN_LIMIT) search("bytes" in p ? p.bytes : await out.read(at, len));
     at += len;
   }
   return [...found];
@@ -767,21 +1093,28 @@ async function stillContains(out: Source, parts: Part[], removed: Field[]): Prom
 export async function cleanMedia(src: Source, name: string, o: Options, before?: MediaInventory): Promise<MediaResult> {
   const inv = before ?? await inspectMedia(src, name);
   const P = payloads(inv, o);
+  // a cover picture or chapter stays only if everything inside it stays (inner links come first, so one pass settles nesting)
+  for (const l of inv.media.links) {
+    if (P.intended.has(l.id) && l.inner.every(i => P.intended.has(i))) continue;
+    P.intended.delete(l.id);
+    for (const i of l.inner) P.intended.delete(i);
+  }
   const parts = inv.fmt === "mp4" ? cleanMp4(inv, P, src.size) : inv.fmt === "mp3" ? cleanMp3(inv, P, src.size) : cleanWav(inv, P);
   const out = partsSource(src, parts);
   const after = await inspectMedia(out, name, inv.fmt as MediaFormat);  // re-check as the same format
-  const afterIds = new Set(after.fields.map(f => f.id));
+  const afterIds = new Set(after.fields.map(f => f.id)), beforeIds = new Set(inv.fields.map(f => f.id));
   const residual = after.fields.filter(f => !P.intended.has(f.id) && (f.risk === "medium" || f.risk === "high"));
   const notes: string[] = [];
   if (P.c2pa) notes.push("Content Credentials were kept, but they will no longer verify after any change.");
   // Belt and braces: a damaged file can hide a second copy of a detail where the parser can't see it. Search the
   // output for the text of everything removed; if any of it is still there, the file is not reported clean.
   const leftover = await stillContains(out, parts, inv.fields.filter(f => !afterIds.has(f.id)));
-  if (leftover.length) notes.push("Part of this file is damaged, and some details may still be inside it.");
+  if (leftover.some(f => f.id === "media:check")) notes.push("This file has too many details to double-check after cleaning.");
+  else if (leftover.length) notes.push("Part of this file is damaged, and some details may still be inside it.");
   return {
     parts, size: out.size, before: inv, after,
     removed: inv.fields.filter(f => !afterIds.has(f.id)),
-    kept: after.fields.filter(f => inv.fields.some(b => b.id === f.id)),
+    kept: after.fields.filter(f => beforeIds.has(f.id)),
     verified: residual.length === 0 && leftover.length === 0 && inv.errors.length === 0 && after.errors.length === 0
       && (after.aiSignals.length === 0 || o.keepCategories.includes("ai") || P.c2pa),
     residual: [...residual, ...leftover],

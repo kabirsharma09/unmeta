@@ -105,7 +105,27 @@ const XMP_LOCATION = /^(exif:GPS|photoshop:(City|State|Country)|Iptc4xmpCore:(Lo
 const XMP_DEVICE = /^(tiff:(Make|Model)|aux:|exif:(FNumber|ExposureTime|ISO|Focal|Flash|Lens|MeteringMode|WhiteBalance|ExposureProgram)|exifEX:(Lens|BodySerial)|GCamera:)/;
 const XMP_PERSONAL = /^(dc:(creator|rights|description|title|subject)|xmpRights:|photoshop:(AuthorsPosition|CaptionWriter|Headline|Instructions|Source|TransmissionReference|DateCreated)|Iptc4xmpCore:(CreatorContactInfo|Scene|SubjectCode|IntellectualGenre)|Iptc4xmpExt:(PersonInImage|ArtworkOrObject)|xmp:(CreateDate|ModifyDate|MetadataDate|Rating|Label)|xmpMM:(DocumentID|InstanceID|OriginalDocumentID)|mwg-rs:|MicrosoftPhoto:|plus:|lr:|exif:DateTime)/;
 const XMP_AI = /^(Iptc4xmpExt:DigitalSourceType|xmp:CreatorTool|xmpMM:(History|DerivedFrom|Ingredients|Pantry|Manifest)|photoshop:(Credit|History|DocumentAncestors)|tiff:Software|crs:)/;
-const XMP_TECH = /^(tiff:(Orientation|XResolution|YResolution|ResolutionUnit|ImageWidth|ImageLength|BitsPerSample|PhotometricInterpretation)|exif:(PixelXDimension|PixelYDimension|ColorSpace|ExifVersion)|photoshop:(ColorMode|ICCProfile)|HDRGainMap:|hdrgm:|GImage:|GDepth:|Container:|xmpDM:|xmp:Thumbnails)/;
+const XMP_TECH = /^(tiff:(Orientation|XResolution|YResolution|ResolutionUnit|ImageWidth|ImageLength|BitsPerSample|PhotometricInterpretation)|exif:(PixelXDimension|PixelYDimension|ColorSpace|ExifVersion)|photoshop:(ColorMode|ICCProfile)|HDRGainMap:|hdrgm:|GImage:|GDepth:|Container:|xmp:Thumbnails)/;
+
+// Dynamic-media (xmpDM) properties: only the ones that describe the encoding itself are technical. Everything else
+// (people, places, comments, names of scenes, tapes, albums, and any property not listed) is private and removable.
+const XMPDM_TECH = new Set(["duration", "videoFrameRate", "videoFrameSize", "videoPixelAspectRatio", "videoPixelDepth",
+  "videoColorSpace", "videoAlphaMode", "videoAlphaPremultipleColor", "videoAlphaUnityIsTransparent", "videoCompressor",
+  "videoFieldOrder", "audioSampleRate", "audioSampleType", "audioChannelType", "audioCompressor", "audioChannelLayout",
+  "fileDataRate", "startTimecode", "altTimecode", "timeScaleParams", "startTimeScale", "startTimeSampleSize", "timeFormat",
+  "timeValue", "frameRate", "frameCount", "scale", "value", "tempo", "timeSignature", "key", "scaleType", "stretchMode",
+  "beatSpliceParams", "resampleParams", "numberOfBeats", "loop", "riseInDecibel", "riseInTimeDuration", "useFileBeatsMarker"]);
+const XMPDM_DEVICE = /^xmpDM:(cameraModel|cameraLabel|cameraAngle|cameraMove)$/;
+const XMPDM_LOCATION = /^xmpDM:(shotLocation|location)$/i;
+
+function classifyXmpDM(q: string): [Category, Risk] {
+  if (XMPDM_TECH.has(q.slice(6))) return ["technical", "none"];
+  if (XMPDM_LOCATION.test(q)) return ["location", "high"];
+  if (XMPDM_DEVICE.test(q)) return ["device", "medium"];
+  // people (artist, composer, engineer, director, cameraOperator…), comments, logComment, scene, shotName, tapeName,
+  // album, dates, and any property not listed above
+  return ["personal", "medium"];
+}
 
 export function classifyXmp(q: string, value: string): [Category, Risk] {
   if (q === "Iptc4xmpExt:DigitalSourceType") {
@@ -114,6 +134,7 @@ export function classifyXmp(q: string, value: string): [Category, Risk] {
   }
   if (XMP_AI.test(q)) return ["ai", isAiText(value) ? "high" : "medium"];
   if (XMP_LOCATION.test(q)) return ["location", "high"];
+  if (q.startsWith("xmpDM:")) return classifyXmpDM(q);
   // embedded pictures inside XMP: thumbnails, Google portrait/depth images, motion-photo containers. They can show
   // the original, uncropped or unedited picture, so they're private, never "technical".
   if (/^(xmp:Thumbnails|xapGImg:|GImage:|GDepth:|Container:|GContainer:|GCamera:)/.test(q)) return ["personal", "medium"];

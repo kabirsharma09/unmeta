@@ -96,7 +96,14 @@ function heifItemsInner(d: Bytes, onConflict: () => void): Item[] {
         const off = readN(d, p, offSize); p += offSize;
         const len = readN(d, p, lenSize); p += lenSize;
         const origin = method === 1 && idat ? idat.body : 0;
-        ext.push([origin + base + off, len]);
+        // the end of what this extent can refer to: the file (method 0) or the idat box (method 1)
+        const limit = method === 1 ? (idat ? idat.end : 0) : d.length;
+        const s = origin + base + off;
+        // a length of 0 means "the rest of the source" (ISO/IEC 14496-12): for the last extent, run to its end
+        let l = len === 0 && k === n - 1 ? limit - s : len;
+        // never trust a length past the end of the data: clamp (keeps reads and allocations bounded)
+        if (!(s < limit) || !(l > 0)) l = 0; else l = Math.min(l, limit - s);
+        ext.push([s, l]);
       }
       if (located.has(id)) conflicts.add(id);
       located.add(id);
