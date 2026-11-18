@@ -520,7 +520,7 @@ def test_page_is_crawlable_without_javascript_and_has_structured_data():
                  "Other ways to remove photo details", "What is photo metadata?",
                  "Can UnMeta remove invisible AI watermarks like SynthID?", "What UnMeta can and can't do"]:
         assert text in visible
-    assert html.count("<h1") == 2  # one per screen; only one is visible at a time
+    assert html.count("<h1") == 1  # one main heading; the results screen uses an h2
     block = _re.search(r'<script type="application/ld\+json">(.*?)</script>', html, _re.S).group(1)
     graph = {n["@type"]: n for n in _json.loads(block)["@graph"]}
     assert {"WebPage", "SoftwareApplication", "HowTo", "FAQPage"} <= set(graph)
@@ -666,10 +666,10 @@ def test_landing_pages_are_complete_unique_and_linked(monkeypatch):
         html = r.get_data(as_text=True)
         title = _re.search(r"<title>(.*?)</title>", html).group(1)
         desc = _re.search(r'<meta name="description" content="([^"]*)">', html).group(1)
-        assert len(title) <= 75 and 50 <= len(desc) <= 175, (url, len(title), len(desc))
+        assert len(_html_unescape(title)) <= 60 and 25 <= len(_html_unescape(desc)) <= 160, (url, len(title), len(desc))
         assert title not in titles and desc not in descs, url
         titles.add(title); descs.add(desc)
-        assert html.count("<h1") == 2 and 'class="crumbs' in html
+        assert html.count("<h1") == 1 and 'class="crumbs' in html
         assert f'<link rel="canonical" href="https://unmeta.example{url}">' in html
         graph = _json.loads(_re.search(r'<script type="application/ld\+json">(.*?)</script>', html, _re.S).group(1))["@graph"]
         types = {n["@type"] for n in graph}
@@ -925,3 +925,21 @@ def test_root_files_are_looked_up_not_built_from_the_request():
     c = create_app().test_client()
     for bad in ["/..%2fserver.html", "/%2e%2e.txt", "/BingSiteAuth..xml", "/nope.txt", "/LICENSE.txt"]:
         assert c.get(bad).status_code == 404, bad
+
+
+
+def test_every_page_meets_bing_and_google_snippet_limits():
+    """Bing flags titles over ~60 characters, descriptions outside 25-160, and more than one h1."""
+    import html as _h
+    import re as _re
+    from metaclean.server import create_app
+    from metaclean.pages import PAGES
+    from metaclean.i18n import TRANSLATED
+    c = create_app().test_client()
+    for path in ["/"] + [f"/{p['slug']}/" for p in PAGES] + [f"/{s}/" for s in TRANSLATED]:
+        html = c.get(path).get_data(as_text=True)
+        title = _h.unescape(_re.search(r"<title>(.*?)</title>", html).group(1))
+        desc = _h.unescape(_re.search(r'<meta name="description" content="([^"]*)">', html).group(1))
+        assert len(title) <= 60, (path, len(title), title)
+        assert 25 <= len(desc) <= 160, (path, len(desc))
+        assert html.count("<h1") == 1, (path, html.count("<h1"))

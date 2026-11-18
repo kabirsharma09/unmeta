@@ -44,7 +44,7 @@ PAGES: list[dict] = [
     {
         "slug": "remove-metadata-from-photos",
         "nav": "Remove metadata from photos",
-        "title": "Remove Metadata from Photos Online, Free and No Upload | UnMeta",
+        "title": "Remove Metadata from Photos: Free, No Upload | UnMeta",
         "description": "Remove EXIF, GPS location, camera details and AI labels from JPEG, HEIC, PNG and RAW photos in your browser. Nothing uploaded, no sign-up, no quality loss.",
         "h1": "Remove <mark class=\"swipe\">metadata</mark> from photos, without uploading them",
         "lead": "Pick a photo and UnMeta lists what it gives away: where it was taken, the phone and its serial number, your name, the date and any AI label. Then it removes those details in your browser and leaves the picture exactly as it was.",
@@ -95,7 +95,7 @@ PAGES: list[dict] = [
         "slug": "remove-ai-info-instagram",
         "nav": "Instagram “AI info”",
         "title": "Remove the Data Behind Instagram’s “AI info” Label | UnMeta",
-        "description": "Real photo labelled “AI info” on Instagram? It’s usually hidden Content Credentials or IPTC data from an editing app. See it and remove it in your browser, losslessly.",
+        "description": "Real photo labelled “AI info” on Instagram? It’s usually hidden Content Credentials or IPTC data. See it and remove it in your browser, losslessly.",
         "h1": "Remove the data behind Instagram’s <mark class=\"swipe\">AI info</mark> label",
         "lead": "Instagram adds “AI info” when a photo’s hidden details say an AI tool touched it, even a one-click clean-up in Photoshop or Magic Editor. UnMeta shows those details and removes them before you post, without changing a pixel.",
         "body": [
@@ -143,7 +143,7 @@ PAGES: list[dict] = [
     {
         "slug": "remove-ai-label",
         "nav": "AI labels on Facebook, TikTok, LinkedIn",
-        "title": "Remove AI Label Data for Facebook, Threads, TikTok, LinkedIn | UnMeta",
+        "title": "Remove AI Labels for Facebook, TikTok, LinkedIn | UnMeta",
         "description": "Which platforms read AI labels from your files, and how to see and remove that hidden data before you post. Free, lossless, in your browser.",
         "h1": "See and remove the <mark class=\"swipe\">AI label</mark> data platforms read",
         "lead": "Facebook, Threads, Instagram, TikTok, LinkedIn, Pinterest and YouTube read hidden labels inside photos and videos to decide whether to show an AI badge. UnMeta shows you what your file says and removes it, losslessly.",
@@ -181,7 +181,7 @@ PAGES: list[dict] = [
     {
         "slug": "remove-location-from-photos",
         "nav": "Remove location from photos",
-        "title": "Remove Location (GPS) from Photos on iPhone, Android or PC | UnMeta",
+        "title": "Remove Location (GPS) from Photos: iPhone, Android | UnMeta",
         "description": "Photos can carry the exact spot where they were taken. See the location in your photo and remove it, free and in your browser, without losing quality.",
         "h1": "Remove the <mark class=\"swipe\">location</mark> from your photos",
         "lead": "Phones save the exact spot, often to within a few metres, inside every photo. UnMeta shows you the location and removes it, along with the phone model and your name, without changing the picture.",
@@ -282,7 +282,7 @@ PAGES: list[dict] = [
     {
         "slug": "remove-metadata-from-audio",
         "nav": "Remove metadata from audio",
-        "title": "Remove Metadata from MP3, M4A Voice Memos and WAV Files | UnMeta",
+        "title": "Remove Metadata from MP3, M4A and WAV Files | UnMeta",
         "description": "Remove ID3 tags, recording location, device and names from MP3, M4A voice memos and WAV files in your browser. The sound is never re-encoded.",
         "h1": "Remove <mark class=\"swipe\">metadata</mark> from audio and voice memos",
         "lead": "Voice memos can carry where they were recorded and the phone that made them. Music and podcast files carry names, comments and software tags. UnMeta removes them in your browser and copies the sound exactly.",
@@ -345,7 +345,7 @@ PAGES: list[dict] = [
     {
         "slug": "remove-content-credentials",
         "nav": "C2PA Content Credentials",
-        "title": "Remove C2PA Content Credentials from Images and Videos | UnMeta",
+        "title": "Remove C2PA Content Credentials from Images | UnMeta",
         "description": "What C2PA Content Credentials are, which apps add them, when to keep them, and how to remove them from photos and videos in your browser.",
         "h1": "Remove <mark class=\"swipe\">Content Credentials</mark> (C2PA)",
         "lead": "Content Credentials are a signed record inside a file saying how it was made and edited. They’re useful for proving where an image came from, and they’re also what platforms read to show AI labels. UnMeta shows them and lets you remove or keep them.",
@@ -395,7 +395,7 @@ PAGES: list[dict] = [
     {
         "slug": "documents",
         "nav": "Clean a document",
-        "title": "Remove Metadata from PDF, Word, Excel and PowerPoint | UnMeta",
+        "title": "Remove Metadata from PDF, Word, Excel, PowerPoint",
         "description": "See and remove the author, company, template path, editing time and hidden preview from PDF, Word, Excel and PowerPoint files. Comments stay. In your browser.",
         "h1": "Clean a document <mark class=\"swipe\">before</mark> you send it",
         "lead": "Documents carry more than their text: who wrote and last edited them, your company, the folder of the template you used, how long you spent on it, and a preview of the first page. UnMeta removes those and leaves everything you can read exactly as it is.",
@@ -443,7 +443,7 @@ PAGES: list[dict] = [
         "slug": "remove-metadata-from-pdf",
         "nav": "PDF metadata",
         "title": "Remove Metadata from a PDF: Author, Creator, Dates | UnMeta",
-        "description": "Remove the author, creator app, producer, dates and XMP from a PDF in your browser. The PDF keeps its exact size and layout. Comments and versions are shown, not changed.",
+        "description": "Remove the author, creator app, producer, dates and XMP from a PDF in your browser. Same size and layout; comments are shown, not changed.",
         "h1": "Remove <mark class=\"swipe\">metadata</mark> from a PDF",
         "lead": "A PDF records who wrote it, the app that made it, when it was created and changed, and often an XMP block with the same details again. UnMeta removes them in place, so the PDF keeps its exact size, layout and text.",
         "body": [
@@ -468,8 +468,8 @@ PAGES: list[dict] = [
     {
         "slug": "remove-author-from-word",
         "nav": "Word, Excel, PowerPoint author",
-        "title": "Remove Author and Company from Word, Excel, PowerPoint | UnMeta",
-        "description": "Remove the author, last edited by, company, manager, template path and editing time from .docx, .xlsx and .pptx files, without opening Office. Free, in your browser.",
+        "title": "Remove Author and Company from Word, Excel, PowerPoint",
+        "description": "Remove the author, last edited by, company, template path and editing time from .docx, .xlsx and .pptx files. Free, in your browser.",
         "h1": "Remove the <mark class=\"swipe\">author</mark> from Word, Excel and PowerPoint",
         "lead": "Office files remember who created and last saved them, your company, the template folder (which often contains your username) and how many minutes you spent editing. UnMeta removes them without opening Office, and leaves the content untouched.",
         "body": [
@@ -493,7 +493,7 @@ PAGES: list[dict] = [
         "slug": "guides/does-instagram-remove-metadata",
         "kind": "guide",
         "nav": "Does Instagram remove metadata?",
-        "title": "Does Instagram Remove Metadata? What It Keeps and What It Reads | UnMeta",
+        "title": "Does Instagram Remove Metadata? What It Keeps | UnMeta",
         "description": "Instagram removes location and camera data from the copies other people see, but it receives your original file first, and reads AI labels before removing them.",
         "h1": "Does Instagram remove <mark class=\"swipe\">metadata</mark>?",
         "lead": "Yes and no. Instagram removes EXIF, including location, from the copies other people can download. But it receives your original file with everything in it first, and it reads AI labels from it to decide whether to show “AI info”.",
@@ -545,7 +545,7 @@ PAGES: list[dict] = [
         "slug": "compare",
         "kind": "guide",
         "nav": "UnMeta vs other removers",
-        "title": "UnMeta vs metadata2go, AI Metadata Cleaner, MetaClean, PrivMeta",
+        "title": "UnMeta vs metadata2go, AI Metadata Cleaner, MetaClean",
         "description": "How UnMeta compares with other online metadata removers on uploads, limits, quality, ads and accounts, from each site’s own pages in November 2026.",
         "h1": "UnMeta compared with other <mark class=\"swipe\">metadata removers</mark>",
         "lead": "Every tool here removes metadata. They differ in where your file goes, what they do to the picture, and what they ask of you. This is how they compared on 17 November 2026, from each site’s own pages.",
@@ -582,7 +582,7 @@ PAGES: list[dict] = [
         "slug": "guides/which-apps-remove-photo-metadata",
         "kind": "guide",
         "nav": "Which apps remove metadata?",
-        "title": "Which Apps Remove Photo Metadata? Instagram, WhatsApp, Discord and More",
+        "title": "Which Apps Remove Photo Metadata? WhatsApp, Discord & More",
         "description": "Which apps and sharing methods remove a photo’s location and other metadata, and which send the original file with everything in it.",
         "h1": "Which apps remove photo <mark class=\"swipe\">metadata</mark>?",
         "lead": "Most social apps remove location from the copy other people see. Anything that sends the original file, such as email, AirDrop, cloud links or “send as document”, keeps every detail.",
@@ -618,7 +618,7 @@ PAGES: list[dict] = [
         "slug": "guides/does-discord-remove-metadata",
         "kind": "guide",
         "nav": "Does Discord remove metadata?",
-        "title": "Does Discord Remove Metadata and Location from Photos and Videos?",
+        "title": "Does Discord Remove Metadata and Location from Photos?",
         "description": "Discord removes EXIF data from pictures you upload, but videos and other files are sent as they are, with location and device details inside.",
         "h1": "Does Discord remove <mark class=\"swipe\">metadata</mark>?",
         "lead": "For pictures, mostly yes: Discord removes EXIF data, including GPS location, from images you upload. Videos and other files are sent as the original file, so a phone video can still carry where it was recorded.",

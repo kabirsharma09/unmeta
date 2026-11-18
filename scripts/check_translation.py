@@ -35,10 +35,10 @@ for p in mod.PAGES:
         errors.append(f"slug {p['slug']} must be '{prefix}' or start with '{prefix}/'")
     if not re.fullmatch(r"[a-z0-9/-]+", p["slug"]):
         errors.append(f"slug {p['slug']}: use lowercase ASCII letters, digits and hyphens only")
-    if len(p["title"]) > 75:
-        errors.append(f"{p['slug']}: title is {len(p['title'])} characters (max 75)")
-    if not 50 <= len(p["description"]) <= 175:
-        errors.append(f"{p['slug']}: description is {len(p['description'])} characters (50-175)")
+    if len(p["title"]) > 60:
+        errors.append(f"{p['slug']}: title is {len(p['title'])} characters (max 60)")
+    if not 25 <= len(p["description"]) <= 160:
+        errors.append(f"{p['slug']}: description is {len(p['description'])} characters (25-160)")
     r = c.get(f"/{p['slug']}/")
     if r.status_code != 200:
         errors.append(f"{p['slug']}: HTTP {r.status_code}")
