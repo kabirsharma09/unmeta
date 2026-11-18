@@ -884,3 +884,24 @@ def test_security_txt_and_sitemap_alternates(monkeypatch):
     photos = next(u for u in urls if u.find("s:loc", ns).text == "https://unmeta.example/remove-metadata-from-photos/")
     langs = {l.get("hreflang") for l in photos.findall("x:link", ns)}
     assert {"en", "es", "pt-BR", "de", "fr", "hi", "x-default"} <= langs
+
+
+def test_supply_chain_is_pinned():
+    """The site is built on Vercel from hash-checked, exactly pinned dependencies, and CI actions run at fixed commits."""
+    import json as _json
+    import re as _re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    cfg = _json.loads((root / "vercel.json").read_text())
+    assert "--require-hashes -r requirements.lock" in cfg["installCommand"] and "--no-deps" in cfg["installCommand"]
+    lock = (root / "requirements.lock").read_text()
+    pins = _re.findall(r"^([a-z0-9_.-]+)==\S+ \\$", lock, _re.M)
+    assert {"flask", "werkzeug", "jinja2", "pillow", "setuptools"} <= set(pins)
+    for block in _re.split(r"\n(?=[a-z])", lock.split("\n\n", 1)[-1]):
+        if _re.match(r"[a-z0-9_.-]+==", block):
+            assert "--hash=sha256:" in block, block.splitlines()[0]
+    for wf in (root / ".github/workflows").glob("*.yml"):
+        for use in _re.findall(r"uses:\s*(\S+)", wf.read_text()):
+            assert _re.search(r"@[0-9a-f]{40}$", use), f"{wf.name}: {use} is not pinned to a commit"
+        assert "${{" not in "".join(l for l in wf.read_text().splitlines() if l.strip().startswith("run:")), wf.name
+    assert any(r["source"] == "/.well-known/(.*)" for r in cfg["headers"])

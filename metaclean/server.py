@@ -574,7 +574,10 @@ def export(out_dir, public_url: str = "") -> list[str]:
             f"/*\n{common}{robots}\n\n"
             f"/\n  Content-Security-Policy: {PAGE_CSP}\n  Cache-Control: no-cache\n\n"
             f"/index.html\n  Content-Security-Policy: {PAGE_CSP}\n  Cache-Control: no-cache\n\n"
-            + "".join(f"/{slug}/*\n  Content-Security-Policy: {PAGE_CSP}\n  Cache-Control: no-cache\n\n" for slug in [*BY_SLUG, *i18n.TRANSLATED]) +
+            + "".join(f"/{slug}/*\n  Content-Security-Policy: {PAGE_CSP}\n  Cache-Control: no-cache\n\n" for slug in [*BY_SLUG, *i18n.TRANSLATED])
+            + "".join(f"/{f.name}\n  Content-Security-Policy: {PAGE_CSP}\n\n" for f in sorted(ROOT_FILES.iterdir()) if f.suffix == ".html")
+            + f"/.well-known/*\n  Content-Security-Policy: {PAGE_CSP}\n\n"
+            f"/static/*.svg\n  Content-Security-Policy: {PAGE_CSP}\n\n"
             f"/static/engine.worker.js\n  Content-Security-Policy: {WORKER_CSP}\n\n"
             f"/sw.js\n  Content-Security-Policy: {SW_CSP}\n  Cache-Control: no-cache\n\n"
             "/static/fonts/*\n  Cache-Control: public, max-age=31536000, immutable\n")
@@ -609,7 +612,9 @@ def vercel_config(public_url: str, build: bool = False) -> dict:
     if build:
         cfg |= {
             "framework": None,
-            "installCommand": "python3 -m venv .venv-build && .venv-build/bin/pip install --quiet .",
+            # every dependency pinned with checksums (requirements.lock): a tampered or surprise release can't get in
+            "installCommand": ("python3 -m venv .venv-build && .venv-build/bin/pip install --quiet --require-hashes -r requirements.lock"
+                               " && .venv-build/bin/pip install --quiet --no-deps --no-build-isolation ."),
             "buildCommand": f".venv-build/bin/python -m metaclean export build/unmeta --public-url {public_url}",
             "outputDirectory": "build/unmeta",
             "git": {"deploymentEnabled": {"private-history": False}},
@@ -618,6 +623,7 @@ def vercel_config(public_url: str, build: bool = False) -> dict:
         "trailingSlash": True,
         "headers": [
             {"source": "/(.*)", "headers": base},
+            {"source": "/.well-known/(.*)", "headers": base + [{"key": "Content-Security-Policy", "value": PAGE_CSP}]},
             {"source": "/((?!static/engine\\.worker\\.js$|sw\\.js$).*)", "headers": [{"key": "Content-Security-Policy", "value": PAGE_CSP}]},
             {"source": "/((?!static/).*)", "headers": [{"key": "Cache-Control", "value": "no-cache"}]},
             {"source": "/static/engine.worker.js", "headers": [{"key": "Content-Security-Policy", "value": WORKER_CSP}]},
