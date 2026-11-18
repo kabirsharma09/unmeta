@@ -383,9 +383,11 @@ def create_app() -> Flask:
 
     root_types = {"html": "text/html", "xml": "application/xml", "txt": "text/plain"}
 
+    known_root_files = {f.name: f for f in ROOT_FILES.iterdir() if f.is_file()} if ROOT_FILES.is_dir() else {}
+
     def root_file(name, ext):
-        p = ROOT_FILES / f"{name}.{ext}"
-        if not name.replace("-", "").replace("_", "").isalnum() or not p.is_file():
+        p = known_root_files.get(f"{name}.{ext}")
+        if p is None:
             abort(404)
         return send_file(p, mimetype=root_types[ext])
 

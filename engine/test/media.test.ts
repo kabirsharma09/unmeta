@@ -19,7 +19,7 @@ const be32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255
 const be16 = (n: number) => [(n >> 8) & 255, n & 255];
 const le32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
 const box = (type: string | number[], ...kids: (Uint8Array | string | number[])[]) => {
-  const body = u8(...kids), t = typeof type === "string" ? u8(type.replace("©", "\xa9").split("").map(c => c.charCodeAt(0))) : u8(type);
+  const body = u8(...kids), t = typeof type === "string" ? u8(type.split("").map(c => c.charCodeAt(0))) : u8(type);
   return u8(be32(8 + body.length), t, body);
 };
 const full = (type: string, ...kids: (Uint8Array | string | number[])[]) => box(type, [0, 0, 0, 0], ...kids);

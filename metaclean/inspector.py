@@ -452,9 +452,10 @@ def _inspect_raw(inv: Inventory, data: bytes):
         _read_exif(inv, ex, "RAW/EXIF")
     except Exception as e:
         inv.errors.append(f"RAW EXIF: {e}")
-    m = re.search(rb"<x:xmpmeta.*?</x:xmpmeta>", data, re.S)
-    if m:
-        _read_xmp(inv, m.group(0))
+    start = data.find(b"<x:xmpmeta")
+    end = data.find(b"</x:xmpmeta>", start) if start >= 0 else -1
+    if start >= 0 and end > start:
+        _read_xmp(inv, data[start:end + len(b"</x:xmpmeta>")])
     blob = C.find_bmff_c2pa(data)
     if blob:
         _read_c2pa(inv, blob)

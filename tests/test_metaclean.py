@@ -905,3 +905,23 @@ def test_supply_chain_is_pinned():
             assert _re.search(r"@[0-9a-f]{40}$", use), f"{wf.name}: {use} is not pinned to a commit"
         assert "${{" not in "".join(l for l in wf.read_text().splitlines() if l.strip().startswith("run:")), wf.name
     assert any(r["source"] == "/.well-known/(.*)" for r in cfg["headers"])
+
+
+def test_python_engine_resists_xmp_bombs_and_slow_patterns():
+    import time
+    from metaclean.inspector import inspect_bytes
+    from metaclean.metadata import parse_xmp
+    bomb = (b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+            b'<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description a="&b;"/></rdf:RDF></x:xmpmeta>')
+    props = parse_xmp(bomb)
+    assert props and props[0].qname == "xmp:Unparseable"
+    t = time.time()
+    inspect_bytes(b"II*\x00" + b"<x:xmpmeta" * 200_000, "x.dng")    # many unmatched starts: must stay linear
+    assert time.time() - t < 2
+
+
+def test_root_files_are_looked_up_not_built_from_the_request():
+    from metaclean.server import create_app
+    c = create_app().test_client()
+    for bad in ["/..%2fserver.html", "/%2e%2e.txt", "/BingSiteAuth..xml", "/nope.txt", "/LICENSE.txt"]:
+        assert c.get(bad).status_code == 404, bad

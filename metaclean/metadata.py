@@ -85,6 +85,8 @@ def parse_xmp(packet: bytes | str) -> list[XmpProp]:
     if start < 0 or end < 0:
         return []
     xml = packet[start:end + len(end_tag)]
+    if "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper():
+        return [XmpProp("xmp:Unparseable", "", "XMP with a DOCTYPE or entities was not read", "simple", [])]
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:

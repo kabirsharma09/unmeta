@@ -1,13 +1,16 @@
 // Run with: npm test  (Node's built-in test runner; fixtures + expectations come from the Python engine)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { inspect, toReport } from "../src/inspect.ts";
 import { clean } from "../src/clean.ts";
 import { PRESETS } from "../src/presets.ts";
 import { highlights } from "../src/highlights.ts";
 
 const dir = new URL("../src/fixtures/", import.meta.url);
+const OUT = mkdtempSync(join(tmpdir(), "unmeta-test-"));   // a private folder for cleaned copies
 const expected = JSON.parse(readFileSync(new URL("expected.json", dir), "utf8"));
 const load = (n: string) => new Uint8Array(readFileSync(new URL(n, dir)));
 const names = Object.keys(expected);
@@ -39,8 +42,7 @@ for (const n of names) {
     for (const s of NEEDLES) assert.ok(!has(r.data, s), `${n} still contains ${s}`);
     assert.equal(r.after.gps, null);
     assert.equal(r.after.aiSignals.length, 0);
-    mkdirSync("/tmp/metaclean-ts-out", { recursive: true });
-    writeFileSync(`/tmp/metaclean-ts-out/${n}`, r.data);
+    writeFileSync(join(OUT, n), r.data);
   });
 }
 
