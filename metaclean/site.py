@@ -107,9 +107,20 @@ def shared_html() -> str:
             '<p class="vs-note reveal">See the <a href="/compare/">side-by-side with named tools</a>.</p></div></section>')
 
 
+def _sources_html(page) -> str:
+    src = page.get("sources")
+    if not src:
+        return ""
+    lis = "".join(f'<li><a href="{_html.escape(u)}" rel="noopener noreferrer" target="_blank">{_html.escape(t)}'
+                  '<span class="vh"> (opens in a new tab)</span></a></li>' for t, u in src)
+    return ('<section class="sec sources" aria-labelledby="srcTitle"><div class="sec-body">'
+            f'<h2 id="srcTitle" class="title">Sources</h2><ul class="source-list">{lis}</ul></div></section>')
+
+
 def body_html(page) -> str:
     shared = shared_html() if page.get("kind", "tool") in ("tool", "guide") else ""
-    return "".join(page["body"]) + _steps_html(page.get("steps")) + shared + _faq_html(page.get("faq")) + _related_html(page)
+    return ("".join(page["body"]) + _steps_html(page.get("steps")) + shared + _faq_html(page.get("faq"))
+            + _sources_html(page) + _related_html(page))
 
 
 def crumbs_html(page) -> str:
@@ -127,7 +138,8 @@ def jsonld(page, base: str, app_node: dict) -> dict:
         {"@type": "WebPage", "@id": f"{url}#page", "url": url, "name": re.sub(r"\s*\|\s*UnMeta$", "", page["title"]),
          "description": page["description"], "inLanguage": "en-GB", "dateModified": UPDATED,
          "isPartOf": {"@id": f"{base}/#site"}, "breadcrumb": {"@id": f"{url}#crumbs"},
-         "about": {"@id": app_node.get("@id", "#app")}, "publisher": {"@id": f"{base}/#org"}},
+         "about": {"@id": app_node.get("@id", "#app")}, "publisher": {"@id": f"{base}/#org"},
+         **({"citation": [{"@type": "CreativeWork", "name": t, "url": u} for t, u in page["sources"]]} if page.get("sources") else {})},
         {"@type": "BreadcrumbList", "@id": f"{url}#crumbs", "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "UnMeta", "item": f"{base}/"},
             {"@type": "ListItem", "position": 2, "name": page["nav"], "item": url}]},
@@ -260,7 +272,8 @@ def llms_full(base: str) -> str:
         out.append(f"## {_html.unescape(re.sub('<[^>]+>', '', p['h1']))}\n\nURL: {base}{page_path(p['slug'])}\n\n{p['lead']}\n\n"
                    + "\n\n".join(sections)
                    + (f"\n\n### How to do it{steps}" if steps else "")
-                   + (f"\n\n### Questions{faq}" if faq else ""))
+                   + (f"\n\n### Questions{faq}" if faq else "")
+                   + ("\n\n### Sources\n" + "\n".join(f"- [{t}]({u})" for t, u in p["sources"]) if p.get("sources") else ""))
     return "\n\n---\n\n".join(out) + "\n"
 
 
@@ -339,8 +352,9 @@ def lang_switch(current: str, key: str) -> str:
         items.append(f'<li><a href="{path}" hreflang="{code}" lang="{code}"{cur}>{_html.escape(_lang_name(code))}</a></li>')
     short = current.split("-")[0].upper()
     label = LANG_LABEL.get(current, "Language")
-    return (f'<details class="menu langs" id="langs"><summary class="text-btn" aria-label="{label}: {_html.escape(_lang_name(current))}">'
+    # the visible "EN" starts the accessible name (WCAG 2.5.3: label in name), then the full words for screen readers
+    return (f'<details class="menu langs" id="langs"><summary class="text-btn">'
             '<svg class="ic" aria-hidden="true" focusable="false"><use href="#i-globe"/></svg>'
-            f'<span class="lang-code">{short}</span>'
+            f'<span class="lang-code">{short}</span><span class="vh"> – {label}: {_html.escape(_lang_name(current))}</span>'
             '<svg class="ic chev" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></summary>'
             f'<div class="menu-panel lang-panel"><p class="label">{label}</p><ul>{"".join(items)}</ul></div></details>')
