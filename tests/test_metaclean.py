@@ -525,7 +525,7 @@ def test_page_is_crawlable_without_javascript_and_has_structured_data():
     graph = {n["@type"]: n for n in _json.loads(block)["@graph"]}
     assert {"WebPage", "SoftwareApplication", "HowTo", "FAQPage"} <= set(graph)
     faq = graph["FAQPage"]["mainEntity"]
-    assert len(faq) == 11
+    assert len(faq) == 12
     # every FAQ answer in the structured data is also visible on the page (Google requires this)
     visible = _re.sub(r"<[^>]+>", " ", html.split("</head>", 1)[1])
     visible = " ".join(visible.split())

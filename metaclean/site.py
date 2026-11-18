@@ -131,9 +131,9 @@ def jsonld(page, base: str, app_node: dict) -> dict:
         {"@type": "BreadcrumbList", "@id": f"{url}#crumbs", "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "UnMeta", "item": f"{base}/"},
             {"@type": "ListItem", "position": 2, "name": page["nav"], "item": url}]},
-        {"@type": "WebSite", "@id": f"{base}/#site", "url": f"{base}/", "name": SITE_NAME, "publisher": {"@id": f"{base}/#org"}},
+        {"@type": "WebSite", "@id": f"{base}/#site", "url": f"{base}/", "name": SITE_NAME, "alternateName": ["Unmeta", "UnMeta metadata remover"], "publisher": {"@id": f"{base}/#org"}},
         {"@type": "Organization", "@id": f"{base}/#org", "name": SITE_NAME, "url": f"{base}/",
-         "logo": f"{base}/static/icon-512.png", "sameAs": [REPO]},
+         "logo": f"{base}/static/icon-512.png", "sameAs": [REPO], "alternateName": "Unmeta"},
         app_node,
     ]
     if page.get("kind") == "guide":
@@ -199,10 +199,10 @@ def home_extras(index_html: str, base: str) -> str:
     data = json.loads(m.group(2))
     ids = {n.get("@id") for n in data["@graph"]}
     if f"{base}/#site" not in ids:
-        data["@graph"] += [{"@type": "WebSite", "@id": f"{base}/#site", "url": f"{base}/", "name": SITE_NAME,
+        data["@graph"] += [{"@type": "WebSite", "@id": f"{base}/#site", "url": f"{base}/", "name": SITE_NAME, "alternateName": ["Unmeta", "UnMeta metadata remover"],
                             "publisher": {"@id": f"{base}/#org"}},
                            {"@type": "Organization", "@id": f"{base}/#org", "name": SITE_NAME, "url": f"{base}/",
-                            "logo": f"{base}/static/icon-512.png", "sameAs": [REPO]}]
+                            "logo": f"{base}/static/icon-512.png", "sameAs": [REPO], "alternateName": "Unmeta"}]
     h = index_html[:m.start(2)] + "\n" + json.dumps(data, indent=2, ensure_ascii=False) + "\n" + index_html[m.end(2):]
     h = h.replace("<!--SHARED-->", shared_html(), 1)
     return h.replace("<!--CRUMBS-->", "").replace("<!--PAGE-BODY-->\n", "").replace("<!--/PAGE-BODY-->\n", "")
