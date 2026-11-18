@@ -603,8 +603,11 @@ function confirmReplace(name) {
 // ---------------------------------------------------------------- landing: reveals, header, demo, transitions
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 function withTransition(update) {
-  if (document.startViewTransition && !reducedMotion.matches) document.startViewTransition(update);
-  else update();
+  if (document.startViewTransition && !reducedMotion.matches) {
+    // a newer screen change skips this one; that's expected, so don't report it as an error
+    const t = document.startViewTransition(update);
+    for (const p of [t.ready, t.finished, t.updateCallbackDone]) p?.catch(() => {});
+  } else update();
 }
 function landing() {
   document.documentElement.classList.add("js");

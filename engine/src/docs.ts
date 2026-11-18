@@ -140,17 +140,50 @@ async function readZip(src: Source): Promise<{ entries: ZipEntry[]; cdStart: num
   return { entries, cdStart: cdOff, comment: (await src.read(eocd + 22, clen)).slice() };
 }
 
-async function entryData(src: Source, en: ZipEntry): Promise<Bytes> {
+/** All the parts read while checking one document, decompressed, together: a small file can't make us inflate gigabytes. */
+interface ReadBudget { left: number }
+const TOO_MUCH = "This document holds more packed data than can be checked.";
+const readBudget = (size: number): ReadBudget => ({ left: Math.min(512 * 1024 * 1024, 64 * 1024 * 1024 + 2 * size) });
+
+async function entryData(src: Source, en: ZipEntry, budget?: ReadBudget): Promise<Bytes> {
   if (en.flags & 1) throw new DocError("Part of this document is locked with a password.");
   if (en.csize > MAX_ENTRY || en.usize > MAX_ENTRY) throw new DocError("Part of this document is unusually large.");
+  const cap = budget ? Math.min(MAX_ENTRY, budget.left) : MAX_ENTRY;
+  if (budget && en.usize > budget.left) { budget.left = 0; throw new DocError(TOO_MUCH); }
   const raw = await src.read(en.dataStart, en.csize);
   let out: Bytes;
   if (en.method === 0) out = raw.slice();
-  else if (en.method === 8) out = inflateCapped(raw, true);
-  else throw new DocError("Part of this document is compressed in a way that isn't supported.");
+  else if (en.method === 8) {
+    try { out = inflateCapped(raw, true, cap); }
+    catch (e) { if (budget && cap < MAX_ENTRY && e instanceof DocError && e.message !== DAMAGED) { budget.left = 0; throw new DocError(TOO_MUCH); } throw e; }
+  } else throw new DocError("Part of this document is compressed in a way that isn't supported.");
+  if (budget) budget.left = Math.max(0, budget.left - out.length);
   if (crc32(out) !== en.crc) throw new DocError(DAMAGED);
   return out;
 }
+
+/** The first bytes of a part, without decompressing the rest. Empty when they can't be read. */
+async function entryHead(src: Source, en: ZipEntry, n = 32): Promise<Bytes> {
+  if (en.flags & 1 || !en.csize) return new Uint8Array(0);
+  const raw = await src.read(en.dataStart, Math.min(en.csize, 2048));
+  if (en.method === 0) return raw.slice(0, n);
+  if (en.method !== 8) return new Uint8Array(0);
+  const inf = new Inflate({ raw: true, chunkSize: 64 }) as Inflate & { ended: boolean };
+  const chunks: Bytes[] = [];
+  let total = 0;
+  inf.onData = (c: unknown) => { if (total < n) { const b = c as Bytes; chunks.push(b); total += b.length; } };
+  for (let i = 0; i < raw.length && total < n && !inf.ended; i += 256) inf.push(raw.subarray(i, i + 256), false);
+  return concat(chunks).slice(0, n);
+}
+/** A picture format the photo engine reads, by its first bytes (the name of a part can't be trusted). */
+const isPicture = (h: Bytes) => h.length >= 12 && C_PIC.some(sig => sig(h));
+const C_PIC: ((h: Bytes) => boolean)[] = [
+  h => h[0] === 0xff && h[1] === 0xd8 && h[2] === 0xff,
+  h => h[0] === 0x89 && latin1(h, 1, 4) === "PNG",
+  h => latin1(h, 0, 4) === "RIFF" && latin1(h, 8, 12) === "WEBP",
+  h => latin1(h, 4, 8) === "ftyp",
+  h => ["II*\0", "MM\0*", "II+\0", "MM\0+"].includes(latin1(h, 0, 4)),
+];
 
 function xmlText(b: Bytes): string {
   if (b[0] === 0xff && b[1] === 0xfe) { let s = ""; for (let i = 2; i + 1 < b.length; i += 2) s += String.fromCharCode(b[i] | (b[i + 1] << 8)); return s; }
@@ -168,50 +201,91 @@ const unescapeXml = (s: string) => s.replace(/&(#x?[0-9a-fA-F]{1,6}|\w{1,8});/g,
 });
 
 interface XmlChild { qname: string; local: string; start: number; end: number; attrs: string; inner: string }
-/** The direct children of the root element, with their exact spans. Bounded: every step moves forward. */
-function xmlChildren(xml: string): XmlChild[] {
+const MAX_CHILDREN = 200_000;
+const NAME_END = /[\s/>=<"']/;
+/** A start or end tag at `lt`: its name, attributes and where it ends (quotes honoured). null when it isn't well formed. */
+function readTag(xml: string, lt: number): { name: string; attrs: string; end: number; selfClose: boolean; close: boolean } | null {
+  let i = lt + 1;
+  const close = xml[i] === "/";
+  if (close) i++;
+  const ns = i;
+  while (i < xml.length && !NAME_END.test(xml[i])) i++;
+  if (i === ns) return null;
+  const name = xml.slice(ns, i);
+  const as = i;
+  let quote = "";
+  for (; i < xml.length; i++) {
+    const c = xml[i];
+    if (quote) { if (c === quote) quote = ""; }
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === "<") return null;
+    else if (c === ">") {
+      const selfClose = !close && xml[i - 1] === "/";
+      const attrs = xml.slice(as, selfClose ? i - 1 : i);
+      if (close && attrs.trim()) return null;
+      return { name, attrs, end: i + 1, selfClose, close };
+    }
+  }
+  return null;
+}
+/** Skips a comment, processing instruction, CDATA section or declaration at `lt`; -1 when unterminated, lt when it is none of these. */
+function skipSpecial(xml: string, lt: number): number {
+  const closeOf = (open: string, close: string) => { if (!xml.startsWith(open, lt)) return -2; const q = xml.indexOf(close, lt + open.length); return q < 0 ? -1 : q + close.length; };
+  for (const [o, c] of [["<!--", "-->"], ["<![CDATA[", "]]>"], ["<?", "?>"], ["<!", ">"]]) { const r = closeOf(o, c); if (r !== -2) return r; }
+  return lt;
+}
+/**
+ * The direct children of the root element, with their exact spans. Linear: one pass over the text, every element's
+ * end tag checked against its start tag. `complete` is false when any part couldn't be read; the caller must then
+ * refuse to vouch for the part, since a detail could be hidden after the point where reading stopped.
+ */
+function xmlChildren(xml: string): { children: XmlChild[]; complete: boolean } {
   const out: XmlChild[] = [];
-  let p = 0;
-  // skip the prolog to the root start tag
-  for (;;) {
+  let p = 0, root = "";
+  for (;;) {   // the prolog, up to the root start tag
     p = xml.indexOf("<", p);
-    if (p < 0) return out;
-    if (xml.startsWith("<?", p)) { const q = xml.indexOf("?>", p); if (q < 0) return out; p = q + 2; continue; }
-    if (xml.startsWith("<!--", p)) { const q = xml.indexOf("-->", p); if (q < 0) return out; p = q + 3; continue; }
-    if (xml.startsWith("<!", p)) { const q = xml.indexOf(">", p); if (q < 0) return out; p = q + 1; continue; }
+    if (p < 0) return { children: out, complete: !xml.trim() };
+    const q = skipSpecial(xml, p);
+    if (q < 0) return { children: out, complete: false };
+    if (q > p) { p = q; continue; }
+    const t = readTag(xml, p);
+    if (!t || t.close) return { children: out, complete: false };
+    if (t.selfClose) return { children: out, complete: true };
+    root = t.name; p = t.end;
     break;
   }
-  const rootEnd = xml.indexOf(">", p);
-  if (rootEnd < 0 || xml[rootEnd - 1] === "/") return out;
-  p = rootEnd + 1;
-  while (p < xml.length && out.length < 10000) {
+  const stack: string[] = [];
+  let cur: { qname: string; start: number; attrs: string; innerStart: number } | null = null;
+  for (;;) {
     const lt = xml.indexOf("<", p);
-    if (lt < 0) break;
-    if (xml.startsWith("<!--", lt)) { const q = xml.indexOf("-->", lt); if (q < 0) break; p = q + 3; continue; }
-    if (xml.startsWith("<?", lt)) { const q = xml.indexOf("?>", lt); if (q < 0) break; p = q + 2; continue; }
-    if (xml[lt + 1] === "/") break;   // the root closes
-    const m = /^<([A-Za-z_][\w.\-]*(?::[A-Za-z_][\w.\-]*)?)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/.exec(xml.slice(lt, lt + 4096));
-    if (!m) break;
-    const qname = m[1], local = qname.includes(":") ? qname.slice(qname.indexOf(":") + 1) : qname;
-    const tagEnd = lt + m[0].length;
-    if (m[3]) { out.push({ qname, local, start: lt, end: tagEnd, attrs: m[2], inner: "" }); p = tagEnd; continue; }
-    // find the matching close tag, counting nested elements of the same name
-    let depth = 1, q = tagEnd, close = -1;
-    const open = new RegExp(`<${qname.replace(/[.\-]/g, "\\$&")}(?=[\\s/>])|</${qname.replace(/[.\-]/g, "\\$&")}\\s*>`, "g");
-    open.lastIndex = q;
-    let mm: RegExpExecArray | null;
-    while ((mm = open.exec(xml))) {
-      if (mm[0][1] === "/") { if (--depth === 0) { close = mm.index; q = mm.index + mm[0].length; break; } }
-      else {
-        const gt = xml.indexOf(">", mm.index);
-        if (gt > 0 && xml[gt - 1] !== "/") depth++;
+    if (lt < 0) return { children: out, complete: false };   // the root never closes
+    const q = skipSpecial(xml, lt);
+    if (q < 0) return { children: out, complete: false };
+    if (q > lt) { p = q; continue; }
+    const t = readTag(xml, lt);
+    if (!t) return { children: out, complete: false };
+    p = t.end;
+    if (t.close) {
+      if (!stack.length) return { children: out, complete: t.name === root };
+      if (stack.pop() !== t.name) return { children: out, complete: false };
+      if (!stack.length && cur) {
+        const local = cur.qname.includes(":") ? cur.qname.slice(cur.qname.indexOf(":") + 1) : cur.qname;
+        out.push({ qname: cur.qname, local, start: cur.start, end: t.end, attrs: cur.attrs, inner: xml.slice(cur.innerStart, lt) });
+        cur = null;
       }
+      continue;
     }
-    if (close < 0) break;
-    out.push({ qname, local, start: lt, end: q, attrs: m[2], inner: xml.slice(tagEnd, close) });
-    p = q;
+    if (!stack.length) {
+      if (out.length >= MAX_CHILDREN) return { children: out, complete: false };
+      if (t.selfClose) {
+        const local = t.name.includes(":") ? t.name.slice(t.name.indexOf(":") + 1) : t.name;
+        out.push({ qname: t.name, local, start: lt, end: t.end, attrs: t.attrs, inner: "" });
+        continue;
+      }
+      cur = { qname: t.name, start: lt, attrs: t.attrs, innerStart: t.end };
+    }
+    if (!t.selfClose) stack.push(t.name);
   }
-  return out;
 }
 const innerText = (s: string) => unescapeXml(s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 const attr = (attrs: string, name: string) => {
@@ -242,7 +316,10 @@ const APP: Record<string, [string, Category, Risk]> = {
 };
 const minutes = (n: number) => n < 60 ? plural(n, "minute") : `${plural(Math.floor(n / 60), "hour")}${n % 60 ? ` ${plural(n % 60, "minute")}` : ""}`;
 
-const MEDIA = /^(word|xl|ppt)\/media\/[^/]+\.(jpe?g|png|webp|heic|heif|tiff?)$/i;
+/** Pictures by name, anywhere in the package; any other part (but XML) is also checked by its first bytes. */
+const MEDIA = /\.(jpe?g|jpe|jfif|pjpeg|pjp|png|apng|webp|heic|heif|hif|avif|tiff?)$/i;
+const NOT_PICTURE = /\.(xml|rels|vml)$/i;
+const PARTIAL = "Part of this document's details couldn't be read completely, so it can't be checked.";
 
 async function inspectOoxml(inv: DocInventory, src: Source) {
   const plan = inv.doc as OoxmlPlan;
@@ -276,11 +353,12 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   }
   const real = (p: string) => byName.get(norm(p))?.name ?? p;
   const meta: string[] = [];
+  const budget = readBudget(src.size);
   const read = async (path: string, metaPart = false): Promise<string | null> => {
     const en = byName.get(norm(path));
     if (!en) return null;
     try {
-      const t = xmlText(await entryData(src, en));
+      const t = xmlText(await entryData(src, en, budget));
       if (metaPart) meta.push(t);
       return t;
     } catch (e) {
@@ -288,6 +366,16 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
       if (metaPart) plan.blocked.set(`ooxml:part:${path}`, "Part of this document's details couldn't be read, so it can't be checked.");
       return null;
     }
+  };
+
+  /** The details in a part; when the part can't be read completely, say so and refuse to vouch for it. */
+  const children = (path: string, xml: string) => {
+    const r = xmlChildren(xml);
+    if (!r.complete) {
+      inv.errors.push(`Couldn't read all of ${path}.`);
+      plan.blocked.set(`ooxml:part:${path}`, PARTIAL);
+    }
+    return r.children;
   };
 
   // where the package says its details live
@@ -310,11 +398,11 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   const core = await read(corePath, true);
   if (core !== null) {
     const part: XmlPart = { path: corePath, xml: core, cuts: [] };
-    for (const c of xmlChildren(core)) {
-      const def = CORE[c.local];
+    for (const c of children(corePath, core)) {
       const value = innerText(c.inner);
-      if (!def || !value) continue;
-      const [qn, label, cat0, risk] = def;
+      if (!value) continue;
+      // a property this list doesn't know is still a detail of the document: it is shown and removed like the rest
+      const [qn, label, cat0, risk] = CORE[c.local] ?? [c.qname, c.qname, "personal", "medium"];
       const [cat, r] = isAiText(value) ? ["ai", "high"] as const : [cat0, risk];
       const id = `ooxml:core:${qn}`;
       add(inv, F(id, cat, "Office", qn, label, value, r));
@@ -325,7 +413,7 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   const app = await read(appPath, true);
   if (app !== null) {
     const part: XmlPart = { path: appPath, xml: app, cuts: [] };
-    for (const c of xmlChildren(app)) {
+    for (const c of children(appPath, app)) {
       const def = APP[c.local];
       let value = innerText(c.inner);
       if (!def || !value) continue;
@@ -342,7 +430,7 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   const custom = await read(customPath, true);
   if (custom !== null) {
     const part: XmlPart = { path: customPath, xml: custom, cuts: [] };
-    for (const c of xmlChildren(custom)) {
+    for (const c of children(customPath, custom)) {
       if (c.local !== "property") continue;
       const name = attr(c.attrs, "name") ?? "property", value = innerText(c.inner);
       const id = `ooxml:custom:${name}`;
@@ -359,7 +447,7 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   const appleMeta = await read(appleMetaPath, true);
   if (appleMeta !== null) {
     const part: XmlPart = { path: appleMetaPath, xml: appleMeta, cuts: [] };
-    for (const c of xmlChildren(appleMeta)) {
+    for (const c of children(appleMetaPath, appleMeta)) {
       const value = innerText(c.inner);
       if (!value) continue;
       const id = `ooxml:meta:${c.local}`;
@@ -384,10 +472,16 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   }
 
   // pictures placed in the document carry their own details
+  // (any part named like a picture, or starting like one; a picture that can't be checked is never passed over in silence)
+  let unchecked = 0, tooMuch = false, tooMany = false;
   for (const en of zip.entries) {
-    if (!MEDIA.test(en.name) || plan.pictures.length >= MAX_PICTURES) continue;
+    if (thumbs.has(en.name) || en.name.endsWith("/") || NOT_PICTURE.test(en.name)) continue;
+    if (!MEDIA.test(en.name) && !isPicture(await entryHead(src, en))) continue;
+    if (budget.left <= 0 || plan.pictures.length >= MAX_PICTURES) { unchecked++; if (budget.left <= 0) tooMuch = true; else tooMany = true; continue; }
     let pinv: Inventory;
-    try { pinv = inspect(await entryData(src, en), en.name.split("/").pop()!); } catch { continue; }
+    try { pinv = inspect(await entryData(src, en, budget), en.name.split("/").pop()!); }
+    catch (e) { unchecked++; if (e instanceof DocError && e.message === TOO_MUCH) tooMuch = true; continue; }
+    if (pinv.fmt === ("unknown" as C.Format) || pinv.errors.length) { unchecked++; continue; }
     const groups = new Map<Category, Field[]>();
     for (const f of pinv.fields) {
       if (f.category === "technical" || f.risk === "none") continue;
@@ -402,6 +496,11 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
         maxRisk(fs.map(f => f.risk)), true, "Details saved inside a picture placed in the document. The picture itself is not changed."));
     }
     plan.pictures.push({ path: en.name, cats: [...groups.keys()] });
+  }
+  if (unchecked) {
+    inv.errors.push(tooMuch || tooMany ? `${tooMuch ? TOO_MUCH : "This document has too many pictures to check them all."} ${plural(unchecked, "picture")} inside couldn't be checked.`
+      : `${plural(unchecked, "picture")} inside couldn't be read, so ${unchecked === 1 ? "its" : "their"} details couldn't be checked.`);
+    plan.blocked.set("ooxml:pictures:unchecked", "Some pictures inside couldn't be checked, so details may remain in them.");
   }
 
   // shown, never changed: comments, tracked changes, embedded files, macros
@@ -441,6 +540,66 @@ async function inspectOoxml(inv: DocInventory, src: Source) {
   const embedded = zip.entries.filter(en => /^(word|xl|ppt)\/embeddings\//i.test(en.name)).length;
   if (embedded) add(inv, info("ooxml:embedded", "Embedded files", `${plural(embedded, "embedded file")} (other documents or objects placed inside)`, "medium", "other"));
   if (zip.entries.some(en => /vbaProject\.bin$/i.test(en.name))) add(inv, info("ooxml:macros", "Macros", "Contains macros (small programs)", "medium", "other"));
+
+  // folder paths and names saved where nobody looks
+  const pathRisk = (v: string): Risk => USER_PATH.test(v) ? "high" : /[\\/]/.test(v) ? "medium" : "low";
+  const cannot = "It can't be removed safely here. Remove it in the app you made the document with, or use \"Save as\" to a new file.";
+  // Excel: the folder the workbook was last saved in (x15ac:absPath)
+  const mainPath = target("/officeDocument", "");
+  for (const path of new Set([mainPath, real("xl/workbook.xml")])) {
+    if (!path || !/\.xml$/i.test(path) || !byName.has(norm(path)) || norm(path) === norm(corePath)) continue;
+    const t = await read(path);
+    if (t === null || !/absPath\b/.test(t)) continue;
+    const tags = [...t.matchAll(/<(?:[\w.\-]+:)?absPath\b[^<>]*>/g)].map(m => m[0]);
+    const value = names(tags.map(tag => attr(tag.slice(1), "url") ?? "")).join(" · ") || "(a folder path)";
+    const id = "ooxml:absPath", risk = pathRisk(value);
+    // Excel writes it alone in its own alternate-content block, which can be dropped whole
+    const blocks = [...t.matchAll(/<([\w.\-]+):AlternateContent\b[^<>]*>\s*<\1:Choice\b[^<>]*>\s*<(?:[\w.\-]+:)?absPath\b[^<>]*\/>\s*<\/\1:Choice>\s*<\/\1:AlternateContent>/g)];
+    const removable = blocks.length === tags.length && (t.match(/absPath\b/g) ?? []).length === tags.length;
+    add(inv, F(id, "personal", "Office", "absPath", "Folder it was saved in", value, risk === "low" ? "medium" : risk, true,
+      removable ? "The folder on your computer where the workbook was saved, which can show your user name." : `The folder on your computer where the workbook was saved. ${cannot}`));
+    meta.push(tags.join("\n"));
+    if (removable) plan.xml.push({ path, xml: t, cuts: blocks.map(b => ({ id, start: b.index!, end: b.index! + b[0].length })) });
+    else plan.blocked.set(id, "A folder path saved inside this document couldn't be removed safely.");
+  }
+  // Word: the template it was made from, as a full path (word/_rels/settings.xml.rels)
+  for (const en of zip.entries) {
+    if (!/(^|\/)_rels\/[^/]+\.rels$/i.test(en.name) || en.name === plan.relsName) continue;
+    const rels = await read(en.name);
+    if (rels === null || !/attachedTemplate/.test(rels)) continue;
+    const owner = real(en.name.replace(/(^|\/)_rels\/([^/]+)\.rels$/i, "$1$2"));
+    const relEls = [...rels.matchAll(/<Relationship\b[^<>]*?(?:\/>|>\s*<\/Relationship>)/g)].filter(m => (attr(m[0].slice(13), "Type") ?? "").endsWith("/attachedTemplate"));
+    const value = names(relEls.map(m => attr(m[0].slice(13), "Target") ?? "")).join(" · ") || "(a template path)";
+    const id = `ooxml:template:${en.name}`, risk = pathRisk(value);
+    // removable when there is exactly one, and exactly one w:attachedTemplate element points at it
+    let cuts: { rel: Cut; own: Cut } | null = null;
+    const ownerXml = relEls.length === 1 && (rels.match(/attachedTemplate/g) ?? []).length === 1 ? await read(owner) : null;
+    if (ownerXml !== null) {
+      const rid = attr(relEls[0][0].slice(13), "Id");
+      const els = [...ownerXml.matchAll(/<(?:[\w.\-]+:)?attachedTemplate\b([^<>]*?)\/>/g)];
+      const refs = [...els[0]?.[1]?.matchAll(/\s[\w.\-]+:id\s*=\s*(?:"([^"]*)"|'([^']*)')/g) ?? []];
+      if (rid && els.length === 1 && (ownerXml.match(/attachedTemplate/g) ?? []).length === 1 && refs.length === 1 && (refs[0][1] ?? refs[0][2]) === rid)
+        cuts = { rel: { id, start: relEls[0].index!, end: relEls[0].index! + relEls[0][0].length }, own: { id, start: els[0].index!, end: els[0].index! + els[0][0].length } };
+    }
+    add(inv, F(id, "personal", "Office", "attachedTemplate", "Template it was made from", value, risk, true,
+      cuts ? "The full path of the template, which can show your user name." : `The full path of the template. ${cannot}`));
+    meta.push(relEls.map(m => m[0]).join("\n"));
+    if (cuts) { plan.xml.push({ path: en.name, xml: rels, cuts: [cuts.rel] }); plan.xml.push({ path: owner, xml: ownerXml!, cuts: [cuts.own] }); }
+    else if (risk !== "low") plan.blocked.set(id, "A template path saved inside this document couldn't be removed safely.");
+  }
+  // SharePoint and OneDrive keep people's names (and sometimes e-mail addresses) in customXml: shown, can't be removed safely
+  for (const en of zip.entries) {
+    if (!/^customXml\/item\d*\.xml$/i.test(en.name)) continue;
+    const t = await read(en.name);
+    if (t === null) continue;
+    const found = names([...[...t.matchAll(/<(?:[\w.\-]+:)?DisplayName\b[^<>]*>([^<]+)</g)].map(m => unescapeXml(m[1])),
+      ...(t.match(/[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+/g) ?? []), ...(t.match(new RegExp(USER_PATH.source, "gi")) ?? [])]);
+    if (!found.length) continue;
+    const id = `ooxml:customXml:${en.name}`;
+    add(inv, F(id, "personal", "Office", en.name, "Names saved by SharePoint or OneDrive", found.slice(0, 3).join(", ") + (found.length > 3 ? "…" : ""), "high", true,
+      `Saved with the document's online properties. ${cannot}`));
+    plan.blocked.set(id, "Names saved by SharePoint or OneDrive couldn't be removed safely.");
+  }
 
   if (zip.comment.length && zip.comment.some(b => b !== 0 && b !== 32)) {
     add(inv, F("ooxml:zip:comment", "other", "Zip", "comment", "Package comment", utf8Decode(zip.comment), "medium"));
@@ -603,12 +762,14 @@ function pdfDate(s: string): string {
 interface PObj { n: number; at: number; v: PV; end: number; stream?: { start: number; len: number; exact: boolean }; inStm?: boolean }
 
 /** Every "N G obj" in file order, including objects from earlier saved versions. Stream data is skipped, not searched. */
-function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean } {
+function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean; overruns: [number, number][]; badEnds: number } {
   const out: PObj[] = [];
+  const overruns: [number, number][] = [];   // bytes a stream's stated length claims beyond where it really ends
+  let badEnds = 0;                          // streams whose end marker isn't where their length says
   let pos = 0, failed = 0;
   const allowance = 2 * d.length + 16 * 1024 * 1024;   // bytes re-read by objects that turn out to be damaged
   while (pos < d.length) {
-    if (out.length >= MAX_OBJECTS || failed > allowance) return { objs: out, complete: false };
+    if (out.length >= MAX_OBJECTS || failed > allowance) return { objs: out, complete: false, overruns, badEnds };
     const i = indexOf(d, "obj", pos);
     if (i < 0) break;
     pos = i + 3;
@@ -638,10 +799,21 @@ function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean } {
         const L = get(v, "Length");
         let len = 0, exact = false;
         if (L?.t === "num" && Number.isInteger(L.v) && L.v >= 0 && s + L.v <= d.length) {
-          // a damaged end marker doesn't move the data: the stated length is still the best guide
           len = L.v;
           const after = skipWs(d, s + L.v, d.length);
           exact = latin1(d, after, after + 9) === "endstream";
+          // an end marker inside the stated length: the length may be too long and swallow the objects after it
+          // (their details would then go unseen). Read on from the first end marker, and say the file is damaged.
+          const inner = indexOf(d, "endstream", s, s + L.v);
+          if (inner >= 0) {
+            let e = inner;
+            if (e > s && d[e - 1] === 10) e--;
+            if (e > s && d[e - 1] === 13) e--;
+            overruns.push([inner, s + L.v]);
+            len = e - s;
+            exact = true;
+            badEnds++;
+          } else if (!exact) badEnds++;   // a damaged end marker doesn't move the data, but the file isn't what it says
         } else {
           const e = indexOf(d, "endstream", s, Math.min(d.length, s + 4 * WINDOW + 9));
           if (e >= 0) {
@@ -649,7 +821,7 @@ function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean } {
             if (len > 0 && d[s + len - 1] === 10) len--;
             if (len > 0 && d[s + len - 1] === 13) len--;
             exact = true;
-          }
+          } else badEnds++;
         }
         obj.stream = { start: s, len, exact };
         pos = Math.max(pos, s + len);
@@ -658,7 +830,7 @@ function scanObjects(d: Bytes): { objs: PObj[]; complete: boolean } {
     }
     out.push(obj);
   }
-  return { objs: out, complete: true };
+  return { objs: out, complete: true, overruns, badEnds };
 }
 
 /** Decoded stream data when it is plain or Flate-only; null when the filters can't be undone here. */
@@ -720,7 +892,13 @@ const XMP_NS: Record<string, string> = { "http://ns.adobe.com/pdf/1.3/": "pdf", 
 async function inspectPdf(inv: DocInventory, src: Source) {
   const plan = inv.doc as PdfPlan;
   const d = await src.read(0, src.size);
-  const { objs, complete } = scanObjects(d);
+  const { objs, complete, overruns, badEnds } = scanObjects(d);
+  if (badEnds) {
+    inv.errors.push("Part of this PDF is damaged: a section's stated length doesn't match where it ends.");
+    plan.blocked.set("pdf:length", "Part of this PDF is damaged, and some details may still be inside it.");
+  }
+  // objects inside the bytes a stream claims as its own can't be changed: a reader that trusts the length sees them as content
+  const swallowed = (o: PObj) => !o.inStm && overruns.some(([s, e]) => o.at < e && o.end > s);
   if (!complete) {
     inv.errors.push("This PDF is too damaged or complex to check completely.");
     plan.blocked.set("pdf:incomplete", "This PDF is too damaged or complex to check completely, so some details may remain.");
@@ -804,6 +982,10 @@ async function inspectPdf(inv: DocInventory, src: Source) {
         plan.blocked.set(id, "Some details are stored in a compressed part of this PDF that can't be changed safely.");
         continue;
       }
+      if (swallowed(o) || (target && swallowed(target))) {
+        plan.blocked.set(id, "Some details are stored in a damaged part of this PDF that can't be changed safely.");
+        continue;
+      }
       const list = plan.patches.get(id) ?? [];
       list.push({ off: en.ks, len: en.v.e - en.ks, fill: "space" });
       if (target && target.v.t === "str") {
@@ -818,10 +1000,17 @@ async function inspectPdf(inv: DocInventory, src: Source) {
   }
 
   // XMP metadata streams (document level, and any attached to pages or pictures)
+  // A details block is found three ways: marked as one, pointed to by a /Metadata entry, or plainly holding an XMP packet.
+  const metaRefs = new Set<number>();
+  for (const o of all) for (const dict of dictsIn(o.v)) { const m = get(dict, "Metadata"); if (m?.t === "ref") metaRefs.add(m.n); }
   for (const o of objs) {
-    if (nameOf(get(o.v, "Type")) !== "Metadata" || !o.stream) continue;
+    if (!o.stream) continue;
+    const marked = nameOf(get(o.v, "Type")) === "Metadata", pointed = metaRefs.has(o.n);
+    const plainXmp = get(o.v, "Filter") === undefined && o.stream.len > 0 &&
+      (indexOf(d, "<x:xmpmeta", o.stream.start, o.stream.start + o.stream.len) >= 0 || indexOf(d, "<?xpacket", o.stream.start, o.stream.start + o.stream.len) >= 0);
+    if (!marked && !pointed && !plainXmp) continue;
     const st = nameOf(get(o.v, "Subtype"));
-    if (st && st !== "XML") continue;
+    if (st && st !== "XML" && !pointed && !plainXmp) continue;
     const s = o.stream.exact ? streamData(d, o) : null;
     plan.scan.push([o.at, o.end]);
     if (!s) {
@@ -854,6 +1043,10 @@ async function inspectPdf(inv: DocInventory, src: Source) {
       ids.push(f.id);
     });
     if (!ids.length) continue;
+    if (swallowed(o)) {
+      for (const id of ids) plan.blocked.set(id, "A details block is stored in a damaged part of this PDF that can't be changed safely.");
+      continue;
+    }
     plan.xmp.push({ start: o.stream.start, len: o.stream.len, ids, props, cleanable: s.plain });
     if (!s.plain) for (const id of ids) if (inv.fields.find(f => f.id === id)?.category !== "technical")
       plan.blocked.set(id, "A details block in this PDF is compressed, so it couldn't be cleaned without changing the file's layout.");

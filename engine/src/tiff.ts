@@ -2,7 +2,9 @@
 import { type Bytes, concat, u16be, u16le, u32be, u32le, utf8DecodeStrict, latin1, utf8Encode, ascii } from "./bytes.ts";
 
 export const IFD_EXIF = 0x8769, IFD_GPS = 0x8825, IFD_INTEROP = 0xa005;
-const TYPE_SIZE: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 129: 1 };
+const TYPE_SIZE: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4, 129: 1 };
+/** Most value bytes decoded per file: bounds time and memory when many entries point at the same large region. */
+const VALUE_BUDGET = 32 * 1024 * 1024;
 
 export interface Entry {
   tag: number;
@@ -19,6 +21,10 @@ export interface ExifData {
   gps: Map<number, Entry>;
   interop: Map<number, Entry>;
   hasIfd1: boolean;
+  /** Every entry read, in file order, including repeated copies of a tag (the maps above keep only the last copy). */
+  all: { ifd: "0" | "exif" | "gps" | "interop"; entry: Entry }[];
+  /** Things the reader skipped without understanding them. Anything here may hide data that wasn't shown. */
+  problems: string[];
 }
 
 /** Parse TIFF-structured EXIF. Accepts data starting with "Exif\0\0" or a TIFF header. */
@@ -31,39 +37,49 @@ export function readExif(data: Bytes, offset = 0): ExifData {
   const r32 = (o: number) => (le ? u32le(data, base + o) : u32be(data, base + o));
   const size = data.length - base;
 
-  const readIfd = (off: number): [Map<number, Entry>, number] => {
+  const all: ExifData["all"] = [], problems: string[] = [];
+  const problem = (p: string) => { if (!problems.includes(p)) problems.push(p); };
+  if (r16(2) !== 42) problem("not a standard TIFF header");
+  let budget = VALUE_BUDGET;
+
+  const readIfd = (off: number, ifd: ExifData["all"][number]["ifd"] | null): [Map<number, Entry>, number] => {
     const m = new Map<number, Entry>();
     if (off <= 0 || off + 2 > size) return [m, 0];
-    const n = r16(off);
-    if (n > 1000) return [m, 0];
+    const n = r16(off);   // at most 65,535 entries, so the loop is bounded
     for (let i = 0; i < n; i++) {
       const e = off + 2 + i * 12;
-      if (e + 12 > size) break;
+      if (e + 12 > size) { problem("a directory runs past the end of the file"); break; }
       const tag = r16(e), type = r16(e + 2), count = r32(e + 4);
       const unit = TYPE_SIZE[type];
-      if (!unit) continue;
+      if (!unit) { problem(`tag ${tag} has an unknown value type (${type})`); continue; }
       const len = unit * count;
-      if (len > 16 * 1024 * 1024) continue;
+      if (len > 16 * 1024 * 1024) { problem(`tag ${tag} is too large to read`); continue; }
       const voff = len <= 4 ? e + 8 : r32(e + 8);
-      if (voff + len > size) continue;
-      const raw = data.slice(base + voff, base + voff + len);
-      m.set(tag, { tag, type, count, raw, value: decode(raw, type, count, le), pos: base + voff });
+      if (voff + len > size) continue;   // points outside the file: there is nothing there to leak
+      if (len > 4) {
+        if (budget < len) { problem("too much metadata to read"); continue; }
+        budget -= len;
+      }
+      const raw = data.subarray(base + voff, base + voff + len);
+      const entry: Entry = { tag, type, count, raw, value: decode(raw, type, count, le), pos: base + voff };
+      m.set(tag, entry);
+      if (ifd) all.push({ ifd, entry });
     }
     const nextPos = off + 2 + n * 12;
     const next = nextPos + 4 <= size ? r32(nextPos) : 0;
     return [m, next];
   };
-  const [ifd0, next] = readIfd(r32(4));
+  const [ifd0, next] = readIfd(r32(4), "0");
   const ptr = (m: Map<number, Entry>, t: number) => {
     const e = m.get(t);
     return e && typeof e.value === "number" ? (e.value as number) : 0;
   };
-  const [exif] = readIfd(ptr(ifd0, IFD_EXIF));
-  const [gps] = readIfd(ptr(ifd0, IFD_GPS));
-  const [interop] = readIfd(ptr(exif, IFD_INTEROP));
+  const [exif] = readIfd(ptr(ifd0, IFD_EXIF), "exif");
+  const [gps] = readIfd(ptr(ifd0, IFD_GPS), "gps");
+  const [interop] = readIfd(ptr(exif, IFD_INTEROP), "interop");
   let hasIfd1 = false;
-  if (next > 0 && next < size) hasIfd1 = readIfd(next)[0].size > 0;
-  return { le, ifd0, exif, gps, interop, hasIfd1 };
+  if (next > 0 && next < size) hasIfd1 = readIfd(next, null)[0].size > 0;
+  return { le, ifd0, exif, gps, interop, hasIfd1, all, problems };
 }
 
 function decode(raw: Bytes, type: number, count: number, le: boolean): unknown {
@@ -83,7 +99,7 @@ function decode(raw: Bytes, type: number, count: number, le: boolean): unknown {
     case 7: return raw;
     case 3: return list(count, i => r16(i * 2));
     case 8: return list(count, i => { const v = r16(i * 2); return v > 32767 ? v - 65536 : v; });
-    case 4: return list(count, i => r32(i * 4));
+    case 4: case 13: return list(count, i => r32(i * 4));
     case 9: return list(count, i => r32(i * 4) | 0);
     case 5: return list(count, i => { const d = r32(i * 8 + 4); return d ? r32(i * 8) / d : 0; });
     case 10: return list(count, i => { const d = r32(i * 8 + 4) | 0; return d ? (r32(i * 8) | 0) / d : 0; });

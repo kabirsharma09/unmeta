@@ -18,5 +18,10 @@ Findings are tagged **Important**, **Nit** or **Pre-existing**.
 | 11 | Python `/api/*` | Still refused when a public URL is set; still requires `X-MetaClean` and same-origin. |
 | 12 | Files downloaded or written back to a folder | Names are sanitised (no `..`, no absolute paths); originals change only after explicit confirmation. |
 | 13 | UI | axe clean in light and dark at 390 px and desktop; works in Safari (sticky header, previews). |
+| 14 | `pyproject.toml` dependencies, `requirements.lock`, `vercel.json` install | Every dependency is pinned with `--hash` (regenerate with `pip-compile --generate-hashes --allow-unsafe`); Vercel and CI install with `--require-hashes`. |
+| 15 | `.github/workflows/*` | Actions pinned to a full commit SHA; `permissions: contents: read`; no `${{ }}` inside `run:` (pass through `env:`); no `pull_request_target`. |
+| 16 | `metaclean/i18n/*` or `site.py` translation code | Translated strings are escaped when swapped into the page; links point to pages that exist; `scripts/check_translation.py` passes for every language. |
+
+Known platform exception: Vercel serves `/.well-known/*` without custom headers (it ignores `vercel.json` rules there). Only `security.txt` lives there: fixed plain text we generate, nothing a visitor controls.
 
 Rules come from real misses in this project: shadowed helper names crashing the clean (`base`), a hidden second location copy in a damaged MOV reported clean, empty metadata keys left behind, Safari painting animated bars over the header, a cross-site guard that blocked links from search results.

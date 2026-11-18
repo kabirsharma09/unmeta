@@ -101,9 +101,20 @@ function cleanPng(inv: Inventory, P: Payloads): Bytes {
   return C.writePng([chunks[0], ...render.slice(0, firstData), ...meta, ...render.slice(firstData), { type: "IEND", data: new Uint8Array(0) }]);
 }
 
-function cleanWebp(inv: Inventory, P: Payloads): Bytes {
+function cleanWebp(inv: Inventory, P: Payloads, errs: string[], notes: string[]): Bytes {
   const chunks = inv.webp!;
-  const out = chunks.filter(c => C.WEBP_IMAGE.has(c.fourcc));
+  let dropped = 0;
+  // animation frames can carry their own chunks (XMP, EXIF, anything): keep only the frame's picture
+  const out = chunks.filter(c => C.WEBP_IMAGE.has(c.fourcc)).map(c => {
+    if (c.fourcc !== "ANMF") return c;
+    const f = C.parseAnmf(c.data);
+    if (!f) { errs.push("An animation frame couldn't be read, so it may still hold hidden details."); return c; }
+    const subs = f.subs.filter(x => C.ANMF_IMAGE.has(x.fourcc));
+    if (subs.length === f.subs.length) return c;
+    dropped += f.subs.length - subs.length;
+    return { fourcc: "ANMF", data: C.writeAnmf(f.header, subs) };
+  });
+  if (dropped) notes.push(`Removed ${dropped} hidden block${dropped > 1 ? "s" : ""} inside animation frames.`);
   if (P.icc) out.push({ fourcc: "ICCP", data: P.icc });
   if (P.exif) out.push({ fourcc: "EXIF", data: P.exif });
   if (P.xmp) out.push({ fourcc: "XMP ", data: utf8Encode(P.xmp) });
@@ -131,59 +142,97 @@ function cleanHeif(src: Bytes, inv: Inventory, P: Payloads, notes: string[]): By
   return d;
 }
 
-function cleanTiff(src: Bytes, inv: Inventory, P: Payloads): Bytes {
+const tiffView = (d: Bytes) => (/^(IIRO|IIRS|IIU\0)/.test(String.fromCharCode(d[0], d[1], d[2], d[3])) ? concat([ascii("II*\0"), d.slice(4)]) : d);
+/** TIFF and RAW files the in-place cleaner understands: a classic TIFF header (or a known RAW variant of one). */
+function tiffWritable(d: Bytes): boolean {
+  if (d.length < 8) return false;
+  const v = tiffView(d.subarray(0, 8));
+  return (v[0] === 0x49 && v[1] === 0x49 && v[2] === 42 && v[3] === 0) || (v[0] === 0x4d && v[1] === 0x4d && v[2] === 0 && v[3] === 42);
+}
+
+function cleanTiff(src: Bytes, inv: Inventory, P: Payloads, errs: string[]): Bytes {
   const d = src.slice();
-  const magic = String.fromCharCode(d[0], d[1], d[2], d[3]);
-  const view = /^(IIRO|IIRS|IIU\0)/.test(magic) ? concat([ascii("II*\0"), d.slice(4)]) : d;
-  const ex = readExif(view);
+  const ex = readExif(tiffView(d));
   const zero = (pos: number, len: number) => d.fill(0, pos, pos + len);
   const ids = new Set(inv.fields.map(f => f.id));
-  const blankMap = (prefix: string, m: Map<number, { tag: number; pos: number; raw: Bytes }>) => {
-    for (const [tag, e] of m) {
-      const id = `${prefix}:${tag}`;
-      if (!ids.has(id) || P.intended.has(id)) continue;
-      const f = inv.fields.find(x => x.id === id)!;
-      if (prefix === "exif:0" && !f.keepable && f.category === "technical") continue; // structural
+  const xmpLast = ex.ifd0.get(700);
+  // every copy of a tag, not only the last one: a repeated tag can hide a second value
+  for (const { ifd, entry: e } of ex.all) {
+    if (ifd === "interop") continue;
+    const id = `exif:${ifd}:${e.tag}`;
+    if (ifd === "0" && (e.tag === 700 || e.tag === 33723 || e.tag === 34377)) {   // blocks stored in TIFF tags
+      if (e === xmpLast && P.xmp) {
+        const b = utf8Encode(P.xmp);
+        if (b.length <= e.raw.length) { d.fill(0x20, e.pos, e.pos + e.raw.length); d.set(b, e.pos); continue; }
+      }
       zero(e.pos, e.raw.length);
+      continue;
     }
-  };
-  blankMap("exif:0", ex.ifd0);
-  blankMap("exif:exif", ex.exif);
-  blankMap("exif:gps", ex.gps);
-  // blocks stored in TIFF tags
-  for (const t of [700, 33723, 34377]) {
-    const e = ex.ifd0.get(t);
-    if (!e) continue;
-    if (t === 700 && P.xmp) {
-      const b = utf8Encode(P.xmp);
-      if (b.length <= e.raw.length) { d.fill(0x20, e.pos, e.pos + e.raw.length); d.set(b, e.pos); continue; }
-    }
+    if (ifd === "exif" && e.tag === 0x927c) { zero(e.pos, e.raw.length); continue; }   // maker notes
+    if (!ids.has(id) || P.intended.has(id)) continue;
+    const f = inv.fields.find(x => x.id === id)!;
+    if (ifd === "0" && !f.keepable && f.category === "technical") continue; // structural
     zero(e.pos, e.raw.length);
   }
-  const mk = ex.exif.get(0x927c);
-  if (mk) zero(mk.pos, mk.raw.length);
   if (!P.c2pa) blankC2paBoxes(d, C.C2PA_UUID);
+  errs.push(...tiffLeftovers(d));
   return d;
 }
+
+/** Re-read the cleaned TIFF and list what the reader couldn't vouch for: skipped entries, and repeated tags whose
+ *  hidden copies still hold a value the inventory never showed. */
+function tiffLeftovers(d: Bytes): string[] {
+  const out: string[] = [];
+  let ex;
+  try { ex = readExif(tiffView(d)); } catch (e) { return [`The cleaned file couldn't be re-read: ${e instanceof Error ? e.message : e}`]; }
+  for (const p of ex.problems) out.push(`Part of the metadata couldn't be read (${p}), so it may still hold hidden details.`);
+  const last = new Map<string, Bytes>();
+  for (const { ifd, entry } of ex.all) last.set(`${ifd}:${entry.tag}`, entry.raw);
+  for (const { ifd, entry } of ex.all) {
+    const k = `${ifd}:${entry.tag}`, l = last.get(k)!;
+    if (entry.raw === l || entry.raw.every(b => b === 0) || equal(entry.raw, l)) continue;
+    out.push(`A detail is stored twice with different values (tag ${entry.tag}); the hidden copy is still in the file.`);
+    break;
+  }
+  return out;
+}
+
+const UNSUPPORTED_LAYOUT = (fmt: string) => fmt === "raw"
+  ? "UnMeta can read this RAW format but can't clean it yet. The file was not changed."
+  : "UnMeta can read this kind of TIFF but can't clean it yet. The file was not changed.";
 
 // ---------------------------------------------------------------- public API
 export function clean(data: Bytes, filename: string, o: Options, before?: Inventory): Result {
   const inv = before ?? inspect(data, filename);
   if (inv.fmt === "unknown") throw new Error("This file type isn't supported.");
   const P = payloads(inv, o);
-  const notes: string[] = [];
+  const notes: string[] = [], errs: string[] = [];
   let out: Bytes;
-  switch (inv.fmt) {
-    case "jpeg": out = cleanJpeg(inv, P); break;
-    case "png": out = cleanPng(inv, P); break;
-    case "webp": out = cleanWebp(inv, P); break;
-    case "heif": case "avif": out = cleanHeif(data, inv, P, notes); break;
-    default: out = cleanTiff(data, inv, P);
+  try {
+    switch (inv.fmt) {
+      case "jpeg": out = cleanJpeg(inv, P); break;
+      case "png": out = cleanPng(inv, P); break;
+      case "webp": out = cleanWebp(inv, P, errs, notes); break;
+      case "heif": case "avif": out = cleanHeif(data, inv, P, notes); break;
+      default:
+        // only rewrite in place what the TIFF reader fully understands; other RAW layouts (CR3, RAF, X3F...) aren't touched
+        if (tiffWritable(data)) out = cleanTiff(data, inv, P, errs);
+        else { errs.push(UNSUPPORTED_LAYOUT(inv.fmt)); out = data.slice(); }
+    }
+  } catch (e) {
+    errs.push(`This file couldn't be cleaned: ${e instanceof Error ? e.message : e}. The file was not changed.`);
+    out = data.slice();
   }
   if (P.c2pa) notes.push("Content Credentials were kept, but they will no longer verify after any change.");
-  const after = inspect(out, filename);
+  let after = inspect(out, filename);
+  if (errs.length) {
+    after = { ...after, errors: [...after.errors, ...errs] };
+    for (const e of errs) if (!notes.includes(e)) notes.push(e);
+  }
   const afterIds = new Set(after.fields.map(f => f.id));
   const residual = after.fields.filter(f => !P.intended.has(f.id) && (f.risk === "medium" || f.risk === "high"));
+  let pixelsUntouched: boolean;
+  try { pixelsUntouched = samePixels(inv, data, out); } catch { pixelsUntouched = false; }
   return {
     data: out, before: inv, after,
     removed: inv.fields.filter(f => !afterIds.has(f.id)),
@@ -191,19 +240,26 @@ export function clean(data: Bytes, filename: string, o: Options, before?: Invent
     // never "verified" if anything couldn't be read: unread parts may hold exactly what we were asked to remove
     verified: residual.length === 0 && inv.errors.length === 0 && after.errors.length === 0
       && (after.aiSignals.length === 0 || o.keepCategories.includes("ai") || P.c2pa),
-    residual, pixelsUntouched: samePixels(inv, data, out), notes,
+    residual, pixelsUntouched, notes,
   };
 }
 
 /** Proof that the picture itself is unchanged: compare the compressed image data. */
 export function samePixels(inv: Inventory, a: Bytes, b: Bytes): boolean {
-  if (inv.fmt === "jpeg") return equal(C.splitScan(C.parseJpeg(a).scan).image, C.splitScan(C.parseJpeg(b).scan).image);
+  if (inv.fmt === "jpeg") {
+    const ja = C.parseJpeg(a), jb = C.parseJpeg(b);
+    // the scan region must run to a real end of image: picture data left in a "trailer" would mean it was cut short
+    if (C.trailerLooksLikeScan(ja.trailer) || C.trailerLooksLikeScan(jb.trailer)) return false;
+    return equal(C.splitScan(ja.scan).image, C.splitScan(jb.scan).image);
+  }
   if (inv.fmt === "png") {
     const idat = (x: Bytes) => concat(C.parsePng(x).filter(c => c.type === "IDAT" || c.type === "fdAT").map(c => c.data));
     return equal(idat(a), idat(b));
   }
   if (inv.fmt === "webp") {
-    const img = (x: Bytes) => concat(C.parseWebp(x).filter(c => ["VP8 ", "VP8L", "ALPH", "ANMF"].includes(c.fourcc)).map(c => c.data));
+    // an animation frame counts as its header plus its picture chunks (other chunks inside a frame are metadata)
+    const frame = (c: C.Riff) => { const f = C.parseAnmf(c.data); return f ? C.writeAnmf(f.header, f.subs.filter(x => C.ANMF_IMAGE.has(x.fourcc))) : c.data; };
+    const img = (x: Bytes) => concat(C.parseWebp(x).filter(c => ["VP8 ", "VP8L", "ALPH", "ANMF"].includes(c.fourcc)).map(c => (c.fourcc === "ANMF" ? frame(c) : c.data)));
     return equal(img(a), img(b));
   }
   if (a.length !== b.length) return false;

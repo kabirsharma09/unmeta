@@ -90,9 +90,35 @@ export function parseJpeg(d: Bytes): JpegFile {
     header.push({ marker, payload: d.slice(pos + 4, pos + 2 + len) });
     pos += 2 + len;
   }
-  const eoi = indexOf(d, new Uint8Array([0xff, 0xd9]), pos);
-  const end = eoi < 0 ? d.length : eoi + 2;
+  const end = jpegScanEnd(d, pos);
   return { header, scan: d.slice(pos, end), trailer: d.slice(end) };
+}
+
+/** End of the picture data (just past EOI, or the end of the file). Walks the scans and steps over every
+ *  length-prefixed segment between them (tables, scan headers, comments, APPn) by its length, so an FF D9 inside
+ *  one of those segments is never mistaken for the end of the image. */
+export function jpegScanEnd(d: Bytes, pos: number): number {
+  let i = pos;
+  while (i + 1 < d.length) {
+    if (d[i] !== 0xff) { const j = d.indexOf(0xff, i + 1); if (j < 0) return d.length; i = j; continue; }
+    const m = d[i + 1];
+    if (m === 0xff) { i++; continue; }                                         // fill byte
+    if (m === 0x00 || m === 0x01 || (m >= 0xd0 && m <= 0xd8)) { i += 2; continue; } // stuffed byte, TEM, RSTn, stray SOI
+    if (m === 0xd9) return i + 2;                                              // EOI
+    // markers that carry a length: SOFn/DHT/DAC (C0-CF), SOS, DQT/DNL/DRI/DHP/EXP, APPn, JPGn, COM.
+    // Anything else, or a length running past the file, is damaged picture data: keep looking for EOI after it.
+    const len = i + 4 <= d.length ? u16be(d, i + 2) : 0;
+    if (m >= 0xc0 && m !== 0xd9 && len >= 2 && i + 2 + len <= d.length) i += 2 + len;
+    else i += 2;
+  }
+  return d.length;
+}
+
+/** True when bytes after EOI look like more JPEG segments (a sign the picture's end was misjudged). */
+export function trailerLooksLikeScan(trailer: Bytes): boolean {
+  if (trailer.length < 2 || trailer[0] !== 0xff) return false;
+  const m = trailer[1];
+  return m === 0xda || m === 0xc4 || m === 0xdb || m === 0xdd || m === 0xcc || m === 0xfe || (m >= 0xe0 && m <= 0xef) || (m >= 0xd0 && m <= 0xd7);
 }
 
 export function writeJpeg(header: Seg[], scan: Bytes): Bytes {
@@ -193,6 +219,27 @@ export function parseWebp(d: Bytes): Riff[] {
   }
   return out;
 }
+/** An animation frame (ANMF): its 16-byte header and the chunks inside it, or null if they don't fit exactly. */
+export function parseAnmf(data: Bytes): { header: Bytes; subs: Riff[] } | null {
+  if (data.length < 16) return null;
+  const subs: Riff[] = [];
+  let pos = 16;
+  while (pos < data.length) {
+    if (pos + 8 > data.length) return null;
+    const fourcc = latin1(data, pos, pos + 4), size = u32le(data, pos + 4);
+    if (pos + 8 + size > data.length) return null;
+    subs.push({ fourcc, data: data.subarray(pos + 8, pos + 8 + size) });
+    pos += 8 + size + (size & 1);
+  }
+  return { header: data.subarray(0, 16), subs };
+}
+/** Chunks inside an animation frame that hold the picture; everything else in a frame is ignored by viewers. */
+export const ANMF_IMAGE = new Set(["ALPH", "VP8 ", "VP8L"]);
+export function writeAnmf(header: Bytes, subs: Riff[]): Bytes {
+  return concat([header, ...subs.flatMap(c => [ascii(c.fourcc), le32(c.data.length), c.data,
+    c.data.length & 1 ? new Uint8Array(1) : new Uint8Array(0)])]);
+}
+
 export function webpSize(chunks: Riff[]): [number, number, boolean] {
   const x = chunks.find(c => c.fourcc === "VP8X");
   if (x) {

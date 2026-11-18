@@ -8,7 +8,7 @@ import {
 } from "./taxonomy.ts";
 import { type ExifData, type Entry, IFD_EXIF, IFD_GPS, IFD_INTEROP, gpsDecimal, readExif } from "./tiff.ts";
 import { type XmpProp, parseXmp } from "./xmp.ts";
-import { heifItems, itemBytes } from "./bmff.ts";
+import { ITEM_TABLE_CONFLICT, heifItemTable, itemBytes } from "./bmff.ts";
 
 export interface Field {
   id: string; category: Category; source: string; name: string; label: string; value: string; risk: Risk; keepable: boolean; note: string;
@@ -298,8 +298,9 @@ function inspectWebp(inv: Inventory, d: Bytes) {
 }
 
 function heifExif(inv: Inventory, d: Bytes): boolean {
-  const items = heifItems(d);
-  if (!items.length) return false;
+  const { items, conflict } = heifItemTable(d);
+  if (conflict) inv.errors.push(ITEM_TABLE_CONFLICT);   // an ID listed twice: never call this photo clean
+  if (!items.length) return conflict;
   for (const it of items) {
     if (it.type === "Exif" && it.extents.length) {
       const b = itemBytes(d, it);

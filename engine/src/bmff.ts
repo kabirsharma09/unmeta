@@ -18,6 +18,9 @@ export function* boxes(d: Bytes, start: number, end: number): Generator<Box> {
 
 export interface Item { id: number; type: string; contentType: string; extents: [number, number][] }
 
+/** The message for a photo whose item table can't be trusted (see heifItemTable). */
+export const ITEM_TABLE_CONFLICT = "This photo's item table lists the same item more than once, so UnMeta can't tell which copy of its details is real.";
+
 function readN(d: Bytes, o: number, n: number): number {
   let v = 0;
   for (let i = 0; i < n; i++) v = v * 256 + d[o + i];
@@ -25,11 +28,26 @@ function readN(d: Bytes, o: number, n: number): number {
 }
 
 /** Return the items of the top-level meta box with absolute byte extents. */
+/** The items, plus whether the item table is ambiguous (an ID listed twice). Conflicting items are left out, and the
+ *  caller must treat the photo as unverifiable: there's no way to tell which copy a reader will use. */
+export function heifItemTable(d: Bytes): { items: Item[]; conflict: boolean } {
+  let conflict = false;
+  const items = heifItemsInner(d, () => { conflict = true; });
+  return { items, conflict };
+}
+
 export function heifItems(d: Bytes): Item[] {
+  return heifItemsInner(d, () => {});
+}
+
+function heifItemsInner(d: Bytes, onConflict: () => void): Item[] {
   const meta = [...boxes(d, 0, d.length)].find(b => b.type === "meta");
   if (!meta) return [];
   const kids = [...boxes(d, meta.body + 4, meta.end)];
   const items = new Map<number, Item>();
+  // An id listed twice (in iinf or iloc) is ambiguous: readers disagree about which entry wins, and a decoy entry
+  // could hide the real Exif. Never pick one: leave those items out entirely and report the table as unreadable.
+  const conflicts = new Set<number>();
   const iinf = kids.find(b => b.type === "iinf");
   if (iinf) {
     const v = d[iinf.body];
@@ -48,6 +66,7 @@ export function heifItems(d: Bytes): Item[] {
       p = z1 + 1;
       let contentType = "";
       if (type === "mime") { const z2 = d.indexOf(0, p); contentType = latin1(d, p, z2 < 0 ? infe.end : z2); }
+      if (items.has(id)) conflicts.add(id);
       items.set(id, { id, type, contentType, extents: [] });
     }
   }
@@ -60,7 +79,8 @@ export function heifItems(d: Bytes): Item[] {
     p += 2;
     const count = v < 2 ? u16be(d, p) : u32be(d, p);
     p += v < 2 ? 2 : 4;
-    for (let i = 0; i < count; i++) {
+    const located = new Set<number>();
+    for (let i = 0; i < count && p < iloc.end; i++) {   // stop at the end of the box: a huge count can't spin
       const id = v < 2 ? u16be(d, p) : u32be(d, p);
       p += v < 2 ? 2 : 4;
       let method = 0;
@@ -78,10 +98,14 @@ export function heifItems(d: Bytes): Item[] {
         const origin = method === 1 && idat ? idat.body : 0;
         ext.push([origin + base + off, len]);
       }
+      if (located.has(id)) conflicts.add(id);
+      located.add(id);
       const it = items.get(id);
       if (it && method !== 2) it.extents = ext;
     }
   }
+  for (const id of conflicts) items.delete(id);
+  if (conflicts.size) onConflict();
   return [...items.values()];
 }
 

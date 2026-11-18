@@ -156,6 +156,7 @@ function dataValue(d: Bytes, data: Box): { text: string; picture: boolean; at: n
 }
 
 function mp4Meta(inv: MediaInventory, r: number, d: Bytes, meta: Box, scope: string) {
+  markHandled(d, meta);
   const before = new Set(inv.fields.map(f => f.id));
   mp4MetaItems(inv, r, d, meta, scope);
   const ids = inv.fields.map(f => f.id).filter(id => !before.has(id));
@@ -197,6 +198,7 @@ function mp4MetaItems(inv: MediaInventory, r: number, d: Bytes, meta: Box, scope
 }
 
 function mp4Udta(inv: MediaInventory, r: number, d: Bytes, udta: Box, scope: string) {
+  markHandled(d, udta);
   for (const c of kids(d, udta.body, udta.end)) {
     const free: Patch = { region: r, off: c.start, len: c.end - c.start, mode: "free", hdr: c.hdr };
     if (c.type === "meta") { mp4Meta(inv, r, d, c, `${scope}.meta`); continue; }
@@ -268,15 +270,76 @@ function mp4Header(inv: MediaInventory, r: number, d: Bytes, b: Box) {
   }
 }
 
+// Boxes that only hold other boxes. 'udta' and 'meta' can sit in any of them (fragments and sample tables included).
+const MP4_CONTAINERS = new Set(["moov", "trak", "mdia", "minf", "stbl", "edts", "dinf", "mvex", "moof", "traf"]);
+
 function mp4Walk(inv: MediaInventory, r: number, d: Bytes, start: number, end: number, scope: string, video: { yes: boolean }, depth = 0) {
   if (depth > 12) { inv.errors.push("This video's structure is nested too deeply to check."); return; }
   for (const b of kids(d, start, end)) {
-    if (["moov", "trak", "mdia", "minf"].includes(b.type)) mp4Walk(inv, r, d, b.body, b.end, b.type === "trak" ? "track" : scope, video, depth + 1);
+    if (b.type === "trak") mp4TimedTrack(inv, d, b);
+    if (MP4_CONTAINERS.has(b.type)) mp4Walk(inv, r, d, b.body, b.end, b.type === "trak" ? "track" : b.type === "moof" ? "fragment" : scope, video, depth + 1);
     else if (b.type === "udta") mp4Udta(inv, r, d, b, scope);
     else if (b.type === "meta") mp4Meta(inv, r, d, b, `${scope}.meta`);
     else if (b.type === "mvhd" || b.type === "tkhd" || b.type === "mdhd") mp4Header(inv, r, d, b);
     else if (b.type === "hdlr" && latin1(d, b.body + 8, b.body + 12) === "vide") video.yes = true;
     else if (b.type === "uuid") mp4Uuid(inv, r, d, b);
+  }
+}
+
+const child = (d: Bytes, b: Box | undefined, type: string, skip = 0) => b && [...kids(d, b.body + skip, b.end)].find(c => c.type === type);
+// Apple 'mebx' keys that only describe the picture (Live Photo timing, orientation, light level)
+const PLAIN_MEBX_KEYS = new Set(["com.apple.quicktime.still-image-time", "com.apple.quicktime.live-photo-info",
+  "com.apple.quicktime.video-orientation", "com.apple.quicktime.scene-illuminance"]);
+
+/**
+ * Timed-metadata tracks (GoPro GPMF 'gpmd', Google 'camm', Sony 'rtmd', 'mebx', 'mett'…) store their details in the
+ * sample data next to the frames, often a GPS fix every frame. Those samples can't be removed without rewriting the
+ * file's sample tables, so they are reported as findings that can't be removed (and the file is never called clean).
+ */
+function mp4TimedTrack(inv: MediaInventory, d: Bytes, trak: Box) {
+  const mdia = child(d, trak, "mdia"), hdlr = child(d, mdia, "hdlr");
+  const handler = hdlr ? latin1(d, hdlr.body + 8, hdlr.body + 12) : "";
+  const stsd = child(d, child(d, child(d, mdia, "minf"), "stbl"), "stsd");
+  const entries = stsd ? [...kids(d, stsd.body + 8, stsd.end)] : [];
+  const types = entries.map(e => e.type);
+  const timed = handler === "meta" || types.some(t => /^(gpmd|camm|rtmd|mebx|mett|metx|urim)$/.test(t));
+  if (!timed) return;
+  const keys: string[] = [];
+  for (const e of entries) {
+    if (e.type !== "mebx") continue;
+    for (const k of kids(d, child(d, e, "keys", 8)?.body ?? e.end, child(d, e, "keys", 8)?.end ?? e.end)) {
+      const keyd = child(d, k, "keyd");
+      keys.push(keyd ? latin1(d, keyd.body + 4, keyd.end).replace(/\0+$/, "") : "?");
+    }
+  }
+  const located = types.some(t => /^(gpmd|camm|rtmd)$/.test(t)) || keys.some(k => /location|gps|iso6709|coordinat/i.test(k));
+  if (!located && types.length && types.every(t => t === "mebx") && keys.length && keys.every(k => PLAIN_MEBX_KEYS.has(k))) return;
+  const what = types.join(", ") || handler || "unknown";
+  if (located) {
+    field(inv, F(`mp4:track:gps:${what}`, "location", "MP4", what, "GPS track", `Timed ${what} track`, "high", false,
+      "This video has a GPS track (GoPro and similar cameras) that UnMeta can't remove without re-encoding."));
+  } else {
+    field(inv, F(`mp4:track:timed:${what}`, "device", "MP4", what, "Timed details track", keys.length ? keys.join(", ") : `Timed ${what} track`, "medium", false,
+      "This video has a track of timed details stored with the frames (camera or sensor data). UnMeta can't read or remove it without re-encoding."));
+  }
+}
+
+/** Every 'udta'/'meta' box the walk handled, by region, so a stray one anywhere else is noticed. */
+const handledBoxes = new WeakMap<Bytes, Set<number>>();
+const markHandled = (d: Bytes, b: Box) => { let s = handledBoxes.get(d); if (!s) handledBoxes.set(d, s = new Set()); s.add(b.start); };
+
+/** Backstop: a 'udta' or 'meta' box header in a place the walk doesn't reach (inside a sample entry, say). */
+function mp4StrayBoxes(inv: MediaInventory, d: Bytes) {
+  const seen = handledBoxes.get(d);
+  for (const t of ["udta", "meta"]) {
+    for (let p = indexOf(d, t, 4); p >= 0; p = indexOf(d, t, p + 1)) {
+      const s = p - 4, size = u32be(d, s);
+      const plausible = size === 1 ? p + 12 <= d.length : size >= 8 && s + size <= d.length;
+      if (plausible && !seen?.has(s)) {
+        inv.errors.push("This video has a details block in a place UnMeta doesn't check.");
+        return;
+      }
+    }
   }
 }
 
@@ -294,8 +357,13 @@ function mp4Uuid(inv: MediaInventory, r: number, d: Bytes, b: Box) {
 
 const MAX_META = 256 * 1024 * 1024;
 
+/** How many changes the plan holds; used to tell whether a region turned out to need any. */
+const planRefs = (inv: MediaInventory) =>
+  [...inv.media.patches.values()].reduce((n, l) => n + l.length, 0) + inv.media.xmp.length + inv.media.metas.length + inv.media.c2pa.length;
+
 async function inspectMp4(inv: MediaInventory, src: Source) {
   const video = { yes: false };
+  let metaBytes = 0;
   for (let pos = 0; pos + 8 <= src.size;) {
     const h = await src.read(pos, 16);
     let size = u32be(h, 0), hdr = 8;
@@ -307,14 +375,19 @@ async function inspectMp4(inv: MediaInventory, src: Source) {
       if (src.size - pos >= 8) inv.errors.push(pos === 0 ? "Damaged video file" : "Part of this video is damaged and couldn't be checked.");
       break;
     }
-    if (["moov", "uuid", "udta", "meta"].includes(type)) {
+    if (["moov", "moof", "uuid", "udta", "meta"].includes(type)) {
       if (size > MAX_META) throw new Error("The details block in this video is unusually large.");
+      if (type === "moof" && (metaBytes += size) > MAX_META) throw new Error("This video's fragment headers are unusually large.");
+      const refs = planRefs(inv);
       const r = inv.media.regions.push({ start: pos, data: (await src.read(pos, size)).slice() }) - 1;
       const d = inv.media.regions[r].data;
-      if (type === "moov") mp4Walk(inv, r, d, hdr, size, "movie", video);
+      if (type === "moov" || type === "moof") mp4Walk(inv, r, d, hdr, size, type === "moov" ? "movie" : "fragment", video);
       else if (type === "uuid") mp4Uuid(inv, r, d, { type, start: 0, hdr, body: hdr, end: size });
       else if (type === "udta") mp4Udta(inv, r, d, { type, start: 0, hdr, body: hdr, end: size }, "file");
       else mp4Meta(inv, r, d, { type, start: 0, hdr, body: hdr, end: size }, "file.meta");
+      mp4StrayBoxes(inv, d);
+      // a fragment header with nothing to change is copied from the original instead of held in memory
+      if (type === "moof" && planRefs(inv) === refs) inv.media.regions.pop();
     }
     pos += size;
   }
